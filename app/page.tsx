@@ -28,7 +28,17 @@ import {
   Archive,
   RefreshCw,
 } from "lucide-react"
-import { materialService, orderService, testConnection, type Material, type ProductionOrder } from "@/lib/supabase"
+import {
+  materialService,
+  orderService,
+  productionPlaceService, // Importar productionPlaceService
+  labelerService, // Importar labelerService
+  testConnection,
+  type Material,
+  type ProductionOrder,
+  type ProductionPlace, // Importar tipo ProductionPlace
+  type Labeler, // Importar tipo Labeler
+} from "@/lib/supabase"
 import { useExcelExport } from "@/hooks/useExcelExport"
 import CreateOrderDialog from "@/components/create-order-dialog"
 
@@ -115,11 +125,20 @@ const ConnectionStatus = () => {
 export default function PVAProduction() {
   const [materials, setMaterials] = useState<Material[]>([])
   const [orders, setOrders] = useState<ProductionOrder[]>([])
+  const [productionPlaces, setProductionPlaces] = useState<ProductionPlace[]>([]) // Nuevo estado
+  const [labelers, setLabelers] = useState<Labeler[]>([]) // Nuevo estado
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("dashboard")
 
-  const { exportToExcel, exportOrdersOnly, exportMaterialsOnly } = useExcelExport()
+  const {
+    exportToExcel,
+    exportOrdersOnly,
+    exportMaterialsOnly,
+    exportOrdersTemplate,
+    exportProductionPlacesTemplate,
+    exportLabelersTemplate,
+  } = useExcelExport()
 
   // Estados para formularios
   const [newMaterial, setNewMaterial] = useState({
@@ -140,11 +159,15 @@ export default function PVAProduction() {
 
       const materialsDataPromise = materialService.getAll()
       const ordersDataPromise = orderService.getAll()
+      const productionPlacesDataPromise = productionPlaceService.getAll() // Cargar lugares
+      const labelersDataPromise = labelerService.getAll() // Cargar rotuladores
 
-      Promise.all([materialsDataPromise, ordersDataPromise])
-        .then(([materialsData, ordersData]) => {
+      Promise.all([materialsDataPromise, ordersDataPromise, productionPlacesDataPromise, labelersDataPromise])
+        .then(([materialsData, ordersData, placesData, labelersData]) => {
           setMaterials(materialsData)
           setOrders(ordersData)
+          setProductionPlaces(placesData) // Actualizar estado
+          setLabelers(labelersData) // Actualizar estado
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Error cargando datos")
@@ -198,8 +221,10 @@ export default function PVAProduction() {
 
   const handleUpdateOrderStatus = async (id: string, status: string) => {
     try {
-      const updatedOrder = await orderService.update(id, { status })
-      setOrders((prev) => prev.map((o) => (o.id === id ? updatedOrder : o)))
+      // La lógica de actualización de estado ya no es directamente aplicable a la nueva estructura de órdenes
+      // Si necesitas reintroducir un 'status' en la tabla production_orders, deberías añadirlo en el SQL y en el tipo ProductionOrder
+      // Por ahora, esta función no hará nada o lanzará un error si se llama.
+      setError("La actualización de estado directa no está implementada para la nueva estructura de órdenes.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error actualizando orden")
     }
@@ -218,8 +243,9 @@ export default function PVAProduction() {
         const workbook = XLSX.read(data, { type: "array" })
 
         let importedCount = 0
+        const importErrors: string[] = []
 
-        // Procesar hoja de materiales si existe
+        // Procesar hoja de materiales
         if (workbook.SheetNames.includes("Materiales")) {
           const worksheet = workbook.Sheets["Materiales"]
           const jsonData = XLSX.utils.sheet_to_json(worksheet)
@@ -232,43 +258,128 @@ export default function PVAProduction() {
               type: row["Tipo"] || row["type"],
               recipe: row["Receta"] || row["recipe"] || "",
             }))
-            .filter((m) => m.material_code && m.material_name)
+            .filter((m) => m.material_code && m.material_name && m.unit && m.type)
 
           if (newMaterials.length > 0) {
-            const createdMaterials = await materialService.createMultiple(newMaterials)
-            setMaterials((prev) => [...createdMaterials, ...prev])
-            importedCount += createdMaterials.length
+            try {
+              const createdMaterials = await materialService.createMultiple(newMaterials)
+              setMaterials((prev) => [...createdMaterials, ...prev])
+              importedCount += createdMaterials.length
+            } catch (err) {
+              importErrors.push(`Error al importar materiales: ${(err as Error).message}`)
+            }
           }
         }
 
-        // Procesar hoja de órdenes si existe
-        if (workbook.SheetNames.includes("Órdenes")) {
-          const worksheet = workbook.Sheets["Órdenes"]
+        // Procesar hoja de órdenes (si se usa la plantilla de órdenes)
+        if (workbook.SheetNames.includes("Órdenes") || workbook.SheetNames.includes("Plantilla Órdenes")) {
+          const worksheet = workbook.Sheets["Órdenes"] || workbook.Sheets["Plantilla Órdenes"]
           const jsonData = XLSX.utils.sheet_to_json(worksheet)
 
           const newOrders = jsonData
-            .map((row: any) => ({
-              order_number: row["Número de Orden"] || row["order_number"],
-              product_reference: row["Referencia del Producto"] || row["product_reference"],
-              desired_quantity: Number.parseFloat(row["Cantidad Deseada"] || row["desired_quantity"]),
-              delivery_date: row["Fecha de Entrega"] || row["delivery_date"],
-              status: ProductionOrderStatus.PENDING,
-              assigned_raw_materials: [],
-              finished_products: [],
-              generated_byproducts: [],
-            }))
-            .filter((o) => o.order_number && o.product_reference && !isNaN(o.desired_quantity))
+            .map((row: any) => {
+              try {
+                return {
+                  order_date: row["Fecha de Orden (YYYY-MM-DD)"] || row["order_date"],
+                  production_place: row["Lugar de Producción (Nombre)"] || row["production_place"],
+                  labeler_id: row["ID Rotulador (UUID)"] || row["labeler_id"],
+                  produced_materials: JSON.parse(row["Productos Producidos (JSON)"] || "[]"),
+                  byproducts: JSON.parse(row["Subproductos (JSON)"] || "[]"),
+                  packaging_materials: JSON.parse(row["Materiales de Empaque (JSON)"] || "[]"),
+                  // Mantener compatibilidad con la estructura anterior si es necesario
+                  finished_products: JSON.parse(row["Productos Producidos (JSON)"] || "[]"),
+                  generated_byproducts: JSON.parse(row["Subproductos (JSON)"] || "[]"),
+                }
+              } catch (parseError) {
+                importErrors.push(
+                  `Error al parsear fila de orden: ${JSON.stringify(row)} - ${(parseError as Error).message}`,
+                )
+                return null
+              }
+            })
+            .filter(Boolean) // Eliminar filas que no se pudieron parsear
 
           if (newOrders.length > 0) {
-            const createdOrders = await orderService.createMultiple(newOrders)
-            setOrders((prev) => [...createdOrders, ...prev])
-            importedCount += createdOrders.length
+            try {
+              // Supabase no tiene un createMultiple para órdenes directamente en el servicio,
+              // pero podemos iterar o añadirlo si es necesario. Por ahora, se asume que
+              // la importación masiva de órdenes es menos común o se hará de otra forma.
+              // Para este ejemplo, solo se importará la primera orden si existe.
+              // Para importación masiva real, necesitarías un `orderService.createMultiple`.
+              for (const orderData of newOrders) {
+                const createdOrder = await orderService.create(
+                  orderData as Omit<ProductionOrder, "id" | "consecutive_number" | "creation_date" | "updated_at">,
+                )
+                setOrders((prev) => [createdOrder, ...prev])
+                importedCount++
+              }
+            } catch (err) {
+              importErrors.push(`Error al importar órdenes: ${(err as Error).message}`)
+            }
           }
         }
 
-        alert(`¡Datos importados exitosamente! Se importaron ${importedCount} registros.`)
+        // Procesar hoja de lugares de producción
+        if (workbook.SheetNames.includes("Plantilla Lugares")) {
+          const worksheet = workbook.Sheets["Plantilla Lugares"]
+          const jsonData = XLSX.utils.sheet_to_json(worksheet)
+
+          const newPlaces = jsonData
+            .map((row: any) => ({
+              name: row["Nombre del Lugar"] || row["name"],
+              description: row["Descripción"] || row["description"] || null,
+              active: (row["Activo (TRUE/FALSE)"] || row["active"] || "TRUE").toUpperCase() === "TRUE",
+            }))
+            .filter((p) => p.name)
+
+          if (newPlaces.length > 0) {
+            try {
+              const createdPlaces = await productionPlaceService.createMultiple(newPlaces)
+              setProductionPlaces((prev) => [...createdPlaces, ...prev])
+              importedCount += createdPlaces.length
+            } catch (err) {
+              importErrors.push(`Error al importar lugares de producción: ${(err as Error).message}`)
+            }
+          }
+        }
+
+        // Procesar hoja de rotuladores
+        if (workbook.SheetNames.includes("Plantilla Rotuladores")) {
+          const worksheet = workbook.Sheets["Plantilla Rotuladores"]
+          const jsonData = XLSX.utils.sheet_to_json(worksheet)
+
+          const newLabelers = jsonData
+            .map((row: any) => ({
+              cedula: String(row["Cédula"] || row["cedula"]),
+              name: row["Nombre Completo"] || row["name"],
+              position: row["Posición"] || row["position"] || "Rotulador",
+              active: (row["Activo (TRUE/FALSE)"] || row["active"] || "TRUE").toUpperCase() === "TRUE",
+            }))
+            .filter((l) => l.cedula && l.name)
+
+          if (newLabelers.length > 0) {
+            try {
+              const createdLabelers = await labelerService.createMultiple(newLabelers)
+              setLabelers((prev) => [...createdLabelers, ...prev])
+              importedCount += createdLabelers.length
+            } catch (err) {
+              importErrors.push(`Error al importar rotuladores: ${(err as Error).message}`)
+            }
+          }
+        }
+
+        if (importErrors.length > 0) {
+          setError(`Errores durante la importación: ${importErrors.join("; ")}`)
+        } else {
+          alert(`¡Datos importados exitosamente! Se importaron ${importedCount} registros.`)
+        }
       } catch (err) {
         setError("Error importando archivo: " + (err instanceof Error ? err.message : "Error desconocido"))
+      } finally {
+        // Limpiar el input de archivo para permitir la misma selección de archivo de nuevo
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ""
+        }
       }
     }
     reader.readAsArrayBuffer(file)
@@ -501,7 +612,7 @@ export default function PVAProduction() {
                           Lugar
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Estado
+                          Rotulador
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
                           Acciones
@@ -532,8 +643,8 @@ export default function PVAProduction() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {order.production_place || "Sin lugar"}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <Badge variant="secondary">Registrado</Badge>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {(order as any).labeler?.name || "N/A"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <Button
@@ -788,6 +899,66 @@ export default function PVAProduction() {
                   </Button>
                 </CardContent>
               </Card>
+            </div>
+
+            <div className="mt-8">
+              <h3 className="text-lg font-semibold mb-4">Plantillas de Importación</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="h-5 w-5" />
+                      Plantilla Órdenes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Descarga una plantilla para importar órdenes de producción masivamente.
+                    </p>
+                    <Button onClick={exportOrdersTemplate} className="w-full bg-transparent" variant="outline">
+                      Descargar Plantilla
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Factory className="h-5 w-5" />
+                      Plantilla Lugares
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Descarga una plantilla para importar lugares de producción.
+                    </p>
+                    <Button
+                      onClick={exportProductionPlacesTemplate}
+                      className="w-full bg-transparent"
+                      variant="outline"
+                    >
+                      Descargar Plantilla
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Plantilla Rotuladores
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Descarga una plantilla para importar información de rotuladores/empleados.
+                    </p>
+                    <Button onClick={exportLabelersTemplate} className="w-full bg-transparent" variant="outline">
+                      Descargar Plantilla
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
 
             <Card>
