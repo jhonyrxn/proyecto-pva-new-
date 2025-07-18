@@ -21,18 +21,42 @@ export interface Material {
 
 export interface ProductionOrder {
   id: string
-  order_number: string
-  product_reference: string
-  desired_quantity: number
-  delivery_date: string
+  consecutive_number: number
+  order_date: string
+  production_place: string
+  labeler_id: string
+  produced_materials: ProducedItem[]
+  byproducts: ProducedItem[]
+  packaging_materials: ProducedItem[]
+  finished_products: any[] // Mantener compatibilidad
+  generated_byproducts: any[] // Mantener compatibilidad
   creation_date: string
-  status: string
-  assigned_raw_materials: any[]
-  finished_products: any[]
-  generated_byproducts: any[]
-  warehouse_location?: string
-  notes?: string
   updated_at: string
+}
+
+export interface ProducedItem {
+  material_id: string
+  material_code: string
+  material_name: string
+  unit: string
+  quantity: number
+}
+
+export interface ProductionPlace {
+  id: string
+  name: string
+  description?: string
+  active: boolean
+  created_at: string
+}
+
+export interface Labeler {
+  id: string
+  cedula: string
+  name: string
+  position: string
+  active: boolean
+  created_at: string
 }
 
 // Funciones para interactuar con la base de datos
@@ -43,6 +67,20 @@ export const materialService = {
     if (error) {
       console.error("Error loading materials:", error)
       throw new Error(`Error cargando materiales: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async getByType(type: string): Promise<Material[]> {
+    const { data, error } = await supabase
+      .from("materials")
+      .select("*")
+      .eq("type", type)
+      .order("material_name", { ascending: true })
+
+    if (error) {
+      console.error("Error loading materials by type:", error)
+      throw new Error(`Error cargando materiales por tipo: ${error.message}`)
     }
     return data || []
   },
@@ -81,8 +119,11 @@ export const orderService = {
   async getAll(): Promise<ProductionOrder[]> {
     const { data, error } = await supabase
       .from("production_orders")
-      .select("*")
-      .order("creation_date", { ascending: false })
+      .select(`
+    *,
+    labeler:labelers(id, name, cedula)
+  `) // alias "labeler" para la relación 1-a-1
+      .order("consecutive_number", { ascending: false })
 
     if (error) {
       console.error("Error loading orders:", error)
@@ -91,34 +132,14 @@ export const orderService = {
     return data || []
   },
 
-  async create(order: Omit<ProductionOrder, "id" | "creation_date" | "updated_at">): Promise<ProductionOrder> {
+  async create(
+    order: Omit<ProductionOrder, "id" | "consecutive_number" | "creation_date" | "updated_at">,
+  ): Promise<ProductionOrder> {
     const { data, error } = await supabase.from("production_orders").insert([order]).select().single()
 
     if (error) {
       console.error("Error creating order:", error)
       throw new Error(`Error creando orden: ${error.message}`)
-    }
-    return data
-  },
-
-  async createMultiple(
-    orders: Omit<ProductionOrder, "id" | "creation_date" | "updated_at">[],
-  ): Promise<ProductionOrder[]> {
-    const { data, error } = await supabase.from("production_orders").insert(orders).select()
-
-    if (error) {
-      console.error("Error creating multiple orders:", error)
-      throw new Error(`Error creando órdenes: ${error.message}`)
-    }
-    return data || []
-  },
-
-  async update(id: string, updates: Partial<ProductionOrder>): Promise<ProductionOrder> {
-    const { data, error } = await supabase.from("production_orders").update(updates).eq("id", id).select().single()
-
-    if (error) {
-      console.error("Error updating order:", error)
-      throw new Error(`Error actualizando orden: ${error.message}`)
     }
     return data
   },
@@ -130,6 +151,92 @@ export const orderService = {
       console.error("Error deleting order:", error)
       throw new Error(`Error eliminando orden: ${error.message}`)
     }
+  },
+}
+
+export const productionPlaceService = {
+  async getAll(): Promise<ProductionPlace[]> {
+    const { data, error } = await supabase
+      .from("production_places")
+      .select("*")
+      .eq("active", true)
+      .order("name", { ascending: true })
+
+    if (error) {
+      console.error("Error loading production places:", error)
+      throw new Error(`Error cargando lugares de producción: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async create(place: Omit<ProductionPlace, "id" | "created_at">): Promise<ProductionPlace> {
+    const { data, error } = await supabase.from("production_places").insert([place]).select().single()
+
+    if (error) {
+      console.error("Error creating production place:", error)
+      throw new Error(`Error creando lugar de producción: ${error.message}`)
+    }
+    return data
+  },
+
+  async createMultiple(places: Omit<ProductionPlace, "id" | "created_at">[]): Promise<ProductionPlace[]> {
+    const { data, error } = await supabase.from("production_places").insert(places).select()
+
+    if (error) {
+      console.error("Error creating multiple production places:", error)
+      throw new Error(`Error creando múltiples lugares de producción: ${error.message}`)
+    }
+    return data || []
+  },
+}
+
+export const labelerService = {
+  async getAll(): Promise<Labeler[]> {
+    const { data, error } = await supabase
+      .from("labelers")
+      .select("*")
+      .eq("active", true)
+      .order("name", { ascending: true })
+
+    if (error) {
+      console.error("Error loading labelers:", error)
+      throw new Error(`Error cargando rotuladores: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async create(labeler: Omit<Labeler, "id" | "created_at">): Promise<Labeler> {
+    const { data, error } = await supabase.from("labelers").insert([labeler]).select().single()
+
+    if (error) {
+      console.error("Error creating labeler:", error)
+      throw new Error(`Error creando rotulador: ${error.message}`)
+    }
+    return data
+  },
+
+  async createMultiple(labelers: Omit<Labeler, "id" | "created_at">[]): Promise<Labeler[]> {
+    const { data, error } = await supabase.from("labelers").insert(labelers).select()
+
+    if (error) {
+      console.error("Error creating multiple labelers:", error)
+      throw new Error(`Error creando múltiples rotuladores: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async exportTemplate(): Promise<Labeler[]> {
+    // Retorna estructura para plantilla de Excel
+    return [
+      {
+        id: "",
+        cedula: "12345678",
+        name: "Ejemplo Nombre",
+        position: "Rotulador",
+        active: true,
+        created_at: "",
+      },
+    ]
   },
 }
 
