@@ -72,6 +72,9 @@ const UnitOfMeasure = {
   LITER: "litros",
 }
 
+// Clave de administrador para eliminaciones (¡IMPORTANTE: En un entorno real, esto debe ser manejado con autenticación segura!)
+const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "admin123" // Puedes cambiar "admin123" por tu clave deseada
+
 // Componente para probar la conexión
 const ConnectionStatus = () => {
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
@@ -218,7 +221,12 @@ export default function PVAProduction() {
   }
 
   const handleDeleteMaterial = async (id: string) => {
-    if (!confirm("¿Estás seguro de eliminar este material?")) return
+    const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este material:")
+    if (enteredKey !== ADMIN_KEY) {
+      alert("Clave incorrecta. No se puede eliminar el material.")
+      return
+    }
+    if (!confirm("¿Estás seguro de eliminar este material? Esta acción es irreversible.")) return
 
     try {
       await materialService.delete(id)
@@ -230,7 +238,12 @@ export default function PVAProduction() {
 
   // Funciones para órdenes
   const handleDeleteOrder = async (id: string) => {
-    if (!confirm("¿Estás seguro de eliminar esta orden?")) return
+    const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar esta orden:")
+    if (enteredKey !== ADMIN_KEY) {
+      alert("Clave incorrecta. No se puede eliminar la orden.")
+      return
+    }
+    if (!confirm("¿Estás seguro de eliminar esta orden? Esta acción es irreversible.")) return
 
     try {
       await orderService.delete(id)
@@ -492,9 +505,9 @@ export default function PVAProduction() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             {" "}
-            {/* Aumentar a 6 columnas */}
+            {/* Aumentar a 7 columnas */}
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="orders">Órdenes</TabsTrigger>
             <TabsTrigger value="materials">Materiales</TabsTrigger>
@@ -959,13 +972,13 @@ export default function PVAProduction() {
           {/* Nueva Pestaña: Producción (Gestión de Traslados) */}
           <TabsContent value="production-management" className="space-y-6">
             <h2 className="text-xl font-semibold">Gestión de Producción</h2>
-            <ProductionManagement />
+            <ProductionManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
           </TabsContent>
 
           {/* Nueva Pestaña: Producto Terminado (Recepción en Bodega) */}
           <TabsContent value="finished-product-reception" className="space-y-6">
             <h2 className="text-xl font-semibold">Recepción de Producto Terminado en Bodega</h2>
-            <FinishedProductReception />
+            <FinishedProductReception materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
           </TabsContent>
 
           <TabsContent value="reports" className="space-y-6">
