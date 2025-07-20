@@ -9,15 +9,20 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import {
   finishedProductTransferService,
-  labelerService,
   type FinishedProductTransfer,
   type Labeler,
+  type Material,
 } from "@/lib/supabase"
-import { Loader2, CheckCircle, XCircle, Warehouse } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, Warehouse, Trash2 } from "lucide-react"
 
-export default function FinishedProductReception() {
-  const [pendingTransfers, setPendingTransfers] = useState<FinishedProductTransfer[]>([])
-  const [labelers, setLabelers] = useState<Labeler[]>([])
+interface FinishedProductReceptionProps {
+  materials: Material[]
+  labelers: Labeler[]
+  adminKey: string
+}
+
+export default function FinishedProductReception({ materials, labelers, adminKey }: FinishedProductReceptionProps) {
+  const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([]) // Ahora guarda todos
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,12 +30,8 @@ export default function FinishedProductReception() {
     try {
       setLoading(true)
       setError(null)
-      const [transfersData, labelersData] = await Promise.all([
-        finishedProductTransferService.getAll(),
-        labelerService.getAll(),
-      ])
-      setPendingTransfers(transfersData.filter((t) => t.status === "PENDIENTE"))
-      setLabelers(labelersData)
+      const transfersData = await finishedProductTransferService.getAll()
+      setFinishedProductTransfers(transfersData) // Cargar todos los traslados de PT
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error cargando traslados de producto terminado")
     } finally {
@@ -65,7 +66,7 @@ export default function FinishedProductReception() {
         received_at: new Date().toISOString(),
         observations: observations,
       })
-      setPendingTransfers((prev) => prev.filter((t) => t.id !== transferId))
+      setFinishedProductTransfers((prev) => prev.map((t) => (t.id === transferId ? updatedTransfer : t))) // Actualizar en la lista
       alert("Producto terminado recibido en bodega exitosamente.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al recibir producto terminado")
@@ -75,13 +76,50 @@ export default function FinishedProductReception() {
   const handleRejectFinishedProduct = async (transferId: string) => {
     if (!confirm("¿Estás seguro de rechazar este traslado de producto terminado?")) return
     try {
-      await finishedProductTransferService.update(transferId, { status: "RECHAZADO" })
-      setPendingTransfers((prev) => prev.filter((t) => t.id !== transferId))
+      const updatedTransfer = await finishedProductTransferService.update(transferId, { status: "RECHAZADO" })
+      setFinishedProductTransfers((prev) => prev.map((t) => (t.id === transferId ? updatedTransfer : t))) // Actualizar en la lista
       alert("Traslado de producto terminado rechazado.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al rechazar producto terminado")
     }
   }
+
+  const handleDeleteFinishedProductTransfer = async (id: string) => {
+    const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este traslado:")
+    if (enteredKey !== adminKey) {
+      alert("Clave incorrecta. No se puede eliminar el traslado.")
+      return
+    }
+    if (!confirm("¿Estás seguro de eliminar este traslado de producto terminado? Esta acción es irreversible.")) return
+
+    try {
+      await finishedProductTransferService.delete(id)
+      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== id))
+      alert("Traslado de producto terminado eliminado exitosamente.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al eliminar traslado de producto terminado")
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    let colorClass = ""
+    switch (status) {
+      case "PENDIENTE":
+        colorClass = "bg-yellow-100 text-yellow-800"
+        break
+      case "RECIBIDO":
+        colorClass = "bg-green-100 text-green-800"
+        break
+      case "RECHAZADO":
+        colorClass = "bg-red-100 text-red-800"
+        break
+      default:
+        colorClass = "bg-gray-100 text-gray-800"
+    }
+    return <Badge className={`${colorClass} text-xs`}>{status}</Badge>
+  }
+
+  const pendingTransfers = finishedProductTransfers.filter((t) => t.status === "PENDIENTE")
 
   if (loading) {
     return (
@@ -119,9 +157,7 @@ export default function FinishedProductReception() {
                     <h3 className="font-semibold text-lg">
                       {transfer.material?.material_name} ({transfer.material?.material_code})
                     </h3>
-                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-                      {transfer.status}
-                    </Badge>
+                    {getStatusBadge(transfer.status)}
                   </div>
                   <p className="text-sm text-gray-600">
                     Cantidad Solicitada: {transfer.quantity} {transfer.material?.unit}
@@ -202,6 +238,101 @@ export default function FinishedProductReception() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Historial de Traslados de Producto Terminado */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Warehouse className="h-5 w-5 text-gray-600" />
+            Historial de Traslados de Producto Terminado
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Producto
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cant. Solicitada
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cant. Recibida
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Fecha Traslado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Trasladado Por
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Recibido Por
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Observaciones
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {finishedProductTransfers.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="text-center py-8 text-gray-500">
+                      No hay traslados de producto terminado registrados.
+                    </td>
+                  </tr>
+                ) : (
+                  finishedProductTransfers.map((transfer) => (
+                    <tr key={transfer.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {transfer.material?.material_name || "N/A"} ({transfer.material?.material_code || "N/A"})
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.quantity} {transfer.material?.unit || ""}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_quantity !== null
+                          ? `${transfer.received_quantity} ${transfer.material?.unit || ""}`
+                          : "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(transfer.transfer_date).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.transfer_employee?.name || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_employee?.name || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(transfer.status)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
+                        {transfer.observations || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <Button
+                          onClick={() => handleDeleteFinishedProductTransfer(transfer.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </div>
