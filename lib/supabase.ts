@@ -59,6 +59,44 @@ export interface Labeler {
   created_at: string
 }
 
+// Nuevas interfaces para traslados
+export interface RawMaterialTransfer {
+  id: string
+  material_id: string
+  quantity: number
+  transfer_date: string
+  transfer_employee_id: string
+  status: "PENDIENTE" | "RECIBIDO" | "RECHAZADO"
+  received_quantity?: number | null
+  received_employee_id?: string | null
+  received_at?: string | null
+  created_at: string
+  updated_at: string
+  // Propiedades para relaciones (opcional, para joins)
+  material?: Material
+  transfer_employee?: Labeler
+  received_employee?: Labeler
+}
+
+export interface FinishedProductTransfer {
+  id: string
+  material_id: string
+  quantity: number
+  transfer_date: string
+  transfer_employee_id: string
+  status: "PENDIENTE" | "RECIBIDO" | "RECHAZADO"
+  received_quantity?: number | null
+  received_employee_id?: string | null
+  received_at?: string | null
+  observations?: string | null
+  created_at: string
+  updated_at: string
+  // Propiedades para relaciones (opcional, para joins)
+  material?: Material
+  transfer_employee?: Labeler
+  received_employee?: Labeler
+}
+
 // Funciones para interactuar con la base de datos
 export const materialService = {
   async getAll(): Promise<Material[]> {
@@ -237,6 +275,149 @@ export const labelerService = {
         created_at: "",
       },
     ]
+  },
+}
+
+// Nuevos servicios para traslados
+export const rawMaterialTransferService = {
+  async getAll(): Promise<RawMaterialTransfer[]> {
+    const { data, error } = await supabase
+      .from("raw_material_transfers")
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit),
+        transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
+        received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
+      `)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Error loading raw material transfers:", error)
+      throw new Error(`Error cargando traslados de materia prima: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async create(
+    transfer: Omit<
+      RawMaterialTransfer,
+      "id" | "created_at" | "updated_at" | "material" | "transfer_employee" | "received_employee"
+    >,
+  ): Promise<RawMaterialTransfer> {
+    const { data, error } = await supabase
+      .from("raw_material_transfers")
+      .insert([transfer])
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit),
+        transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula)
+      `)
+      .single()
+
+    if (error) {
+      console.error("Error creating raw material transfer:", error)
+      throw new Error(`Error creando traslado de materia prima: ${error.message}`)
+    }
+    return data
+  },
+
+  async update(
+    id: string,
+    updates: Partial<
+      Omit<
+        RawMaterialTransfer,
+        "id" | "created_at" | "updated_at" | "material" | "transfer_employee" | "received_employee"
+      >
+    >,
+  ): Promise<RawMaterialTransfer> {
+    const { data, error } = await supabase
+      .from("raw_material_transfers")
+      .update(updates)
+      .eq("id", id)
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit),
+        transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
+        received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
+      `)
+      .single()
+
+    if (error) {
+      console.error("Error updating raw material transfer:", error)
+      throw new Error(`Error actualizando traslado de materia prima: ${error.message}`)
+    }
+    return data
+  },
+}
+
+export const finishedProductTransferService = {
+  async getAll(): Promise<FinishedProductTransfer[]> {
+    const { data, error } = await supabase
+      .from("finished_product_transfers")
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit),
+        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+        received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+      `)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Error loading finished product transfers:", error)
+      throw new Error(`Error cargando traslados de producto terminado: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async create(
+    transfer: Omit<
+      FinishedProductTransfer,
+      "id" | "created_at" | "updated_at" | "material" | "transfer_employee" | "received_employee"
+    >,
+  ): Promise<FinishedProductTransfer> {
+    const { data, error } = await supabase
+      .from("finished_product_transfers")
+      .insert([transfer])
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit),
+        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula)
+      `)
+      .single()
+
+    if (error) {
+      console.error("Error creating finished product transfer:", error)
+      throw new Error(`Error creando traslado de producto terminado: ${error.message}`)
+    }
+    return data
+  },
+
+  async update(
+    id: string,
+    updates: Partial<
+      Omit<
+        FinishedProductTransfer,
+        "id" | "created_at" | "updated_at" | "material" | "transfer_employee" | "received_employee"
+      >
+    >,
+  ): Promise<FinishedProductTransfer> {
+    const { data, error } = await supabase
+      .from("finished_product_transfers")
+      .update(updates)
+      .eq("id", id)
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit),
+        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+        received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+      `)
+      .single()
+
+    if (error) {
+      console.error("Error updating finished product transfer:", error)
+      throw new Error(`Error actualizando traslado de producto terminado: ${error.message}`)
+    }
+    return data
   },
 }
 
