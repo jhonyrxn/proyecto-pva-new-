@@ -11,21 +11,22 @@ import { Badge } from "@/components/ui/badge"
 import {
   rawMaterialTransferService,
   finishedProductTransferService,
-  labelerService,
-  materialService,
   type RawMaterialTransfer,
   type FinishedProductTransfer,
   type Labeler,
   type Material,
 } from "@/lib/supabase"
-import { Loader2, CheckCircle, XCircle, ArrowRight, Package } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, ArrowRight, Package, Trash2 } from "lucide-react"
 
-export default function ProductionManagement() {
-  const [pendingRawMaterialTransfers, setPendingRawMaterialTransfers] = useState<RawMaterialTransfer[]>([])
+interface ProductionManagementProps {
+  materials: Material[]
+  labelers: Labeler[]
+  adminKey: string
+}
+
+export default function ProductionManagement({ materials, labelers, adminKey }: ProductionManagementProps) {
+  const [rawMaterialTransfers, setRawMaterialTransfers] = useState<RawMaterialTransfer[]>([]) // Ahora guarda todos
   const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([])
-  const [labelers, setLabelers] = useState<Labeler[]>([])
-  const [finishedProducts, setFinishedProducts] = useState<Material[]>([])
-  const [byproducts, setByproducts] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -41,19 +42,13 @@ export default function ProductionManagement() {
     try {
       setLoading(true)
       setError(null)
-      const [rawTransfers, finishedTransfers, labelersData, finishedProductsData, byproductsData] = await Promise.all([
+      const [rawTransfers, finishedTransfers] = await Promise.all([
         rawMaterialTransferService.getAll(),
         finishedProductTransferService.getAll(),
-        labelerService.getAll(),
-        materialService.getByType("Producto Terminado"),
-        materialService.getByType("Subproducto"),
       ])
 
-      setPendingRawMaterialTransfers(rawTransfers.filter((t) => t.status === "PENDIENTE"))
+      setRawMaterialTransfers(rawTransfers) // Cargar todos los traslados de MP
       setFinishedProductTransfers(finishedTransfers)
-      setLabelers(labelersData)
-      setFinishedProducts(finishedProductsData)
-      setByproducts(byproductsData)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error cargando datos de producción")
     } finally {
@@ -82,8 +77,7 @@ export default function ProductionManagement() {
         received_employee_id: receivedEmployeeId,
         received_at: new Date().toISOString(),
       })
-      setPendingRawMaterialTransfers((prev) => prev.filter((t) => t.id !== transferId))
-      // Opcional: añadir a una lista de "traslados recibidos" si se desea mostrar
+      setRawMaterialTransfers((prev) => prev.map((t) => (t.id === transferId ? updatedTransfer : t))) // Actualizar en la lista
       alert("Materia prima recibida exitosamente.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al recibir materia prima")
@@ -93,11 +87,28 @@ export default function ProductionManagement() {
   const handleRejectRawMaterial = async (transferId: string) => {
     if (!confirm("¿Estás seguro de rechazar este traslado de materia prima?")) return
     try {
-      await rawMaterialTransferService.update(transferId, { status: "RECHAZADO" })
-      setPendingRawMaterialTransfers((prev) => prev.filter((t) => t.id !== transferId))
+      const updatedTransfer = await rawMaterialTransferService.update(transferId, { status: "RECHAZADO" })
+      setRawMaterialTransfers((prev) => prev.map((t) => (t.id === transferId ? updatedTransfer : t))) // Actualizar en la lista
       alert("Traslado de materia prima rechazado.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al rechazar materia prima")
+    }
+  }
+
+  const handleDeleteRawMaterialTransfer = async (id: string) => {
+    const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este traslado:")
+    if (enteredKey !== adminKey) {
+      alert("Clave incorrecta. No se puede eliminar el traslado.")
+      return
+    }
+    if (!confirm("¿Estás seguro de eliminar este traslado de materia prima? Esta acción es irreversible.")) return
+
+    try {
+      await rawMaterialTransferService.delete(id)
+      setRawMaterialTransfers((prev) => prev.filter((t) => t.id !== id))
+      alert("Traslado de materia prima eliminado exitosamente.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al eliminar traslado de materia prima")
     }
   }
 
@@ -134,6 +145,27 @@ export default function ProductionManagement() {
       setError(err instanceof Error ? err.message : "Error al registrar traslado de producto terminado")
     }
   }
+
+  const getStatusBadge = (status: string) => {
+    let colorClass = ""
+    switch (status) {
+      case "PENDIENTE":
+        colorClass = "bg-yellow-100 text-yellow-800"
+        break
+      case "RECIBIDO":
+        colorClass = "bg-green-100 text-green-800"
+        break
+      case "RECHAZADO":
+        colorClass = "bg-red-100 text-red-800"
+        break
+      default:
+        colorClass = "bg-gray-100 text-gray-800"
+    }
+    return <Badge className={`${colorClass} text-xs`}>{status}</Badge>
+  }
+
+  const pendingRawMaterialTransfers = rawMaterialTransfers.filter((t) => t.status === "PENDIENTE")
+  const finishedProducts = materials.filter((m) => m.type === "Producto Terminado")
 
   if (loading) {
     return (
@@ -172,9 +204,7 @@ export default function ProductionManagement() {
                     <h3 className="font-semibold text-lg">
                       {transfer.material?.material_name} ({transfer.material?.material_code})
                     </h3>
-                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-                      {transfer.status}
-                    </Badge>
+                    {getStatusBadge(transfer.status)}
                   </div>
                   <p className="text-sm text-gray-600">
                     Cantidad Solicitada: {transfer.quantity} {transfer.material?.unit}
@@ -244,6 +274,95 @@ export default function ProductionManagement() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Historial de Traslados de Materia Prima */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-gray-600" />
+            Historial de Traslados de Materia Prima
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Material
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cant. Solicitada
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cant. Recibida
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Fecha Traslado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Trasladado Por
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Recibido Por
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {rawMaterialTransfers.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-8 text-gray-500">
+                      No hay traslados de materia prima registrados.
+                    </td>
+                  </tr>
+                ) : (
+                  rawMaterialTransfers.map((transfer) => (
+                    <tr key={transfer.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {transfer.material?.material_name || "N/A"} ({transfer.material?.material_code || "N/A"})
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.quantity} {transfer.material?.unit || ""}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_quantity !== null
+                          ? `${transfer.received_quantity} ${transfer.material?.unit || ""}`
+                          : "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(transfer.transfer_date).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.transfer_employee?.name || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_employee?.name || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(transfer.status)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <Button
+                          onClick={() => handleDeleteRawMaterialTransfer(transfer.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
