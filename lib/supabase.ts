@@ -348,6 +348,15 @@ export const rawMaterialTransferService = {
     }
     return data
   },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from("raw_material_transfers").delete().eq("id", id)
+
+    if (error) {
+      console.error("Error deleting raw material transfer:", error)
+      throw new Error(`Error eliminando traslado de materia prima: ${error.message}`)
+    }
+  },
 }
 
 export const finishedProductTransferService = {
@@ -418,6 +427,15 @@ export const finishedProductTransferService = {
       throw new Error(`Error actualizando traslado de producto terminado: ${error.message}`)
     }
     return data
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from("finished_product_transfers").delete().eq("id", id)
+
+    if (error) {
+      console.error("Error deleting finished product transfer:", error)
+      throw new Error(`Error eliminando traslado de producto terminado: ${error.message}`)
+    }
   },
 }
 
