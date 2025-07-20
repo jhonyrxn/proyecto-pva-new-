@@ -31,16 +31,23 @@ import {
 import {
   materialService,
   orderService,
-  productionPlaceService, // Importar productionPlaceService
-  labelerService, // Importar labelerService
+  productionPlaceService,
+  labelerService,
+  rawMaterialTransferService, // Importar nuevo servicio
+  finishedProductTransferService, // Importar nuevo servicio
   testConnection,
   type Material,
   type ProductionOrder,
-  type ProductionPlace, // Importar tipo ProductionPlace
-  type Labeler, // Importar tipo Labeler
+  type ProductionPlace,
+  type Labeler,
+  type RawMaterialTransfer, // Importar nuevo tipo
+  type FinishedProductTransfer, // Importar nuevo tipo
 } from "@/lib/supabase"
 import { useExcelExport } from "@/hooks/useExcelExport"
 import CreateOrderDialog from "@/components/create-order-dialog"
+import RawMaterialTransferForm from "@/components/raw-material-transfer-form" // Importar nuevo componente
+import ProductionManagement from "@/components/production-management" // Importar nuevo componente
+import FinishedProductReception from "@/components/finished-product-reception" // Importar nuevo componente
 
 const ProductionOrderStatus = {
   PENDING: "PENDIENTE",
@@ -125,11 +132,14 @@ const ConnectionStatus = () => {
 export default function PVAProduction() {
   const [materials, setMaterials] = useState<Material[]>([])
   const [orders, setOrders] = useState<ProductionOrder[]>([])
-  const [productionPlaces, setProductionPlaces] = useState<ProductionPlace[]>([]) // Nuevo estado
-  const [labelers, setLabelers] = useState<Labeler[]>([]) // Nuevo estado
+  const [productionPlaces, setProductionPlaces] = useState<ProductionPlace[]>([])
+  const [labelers, setLabelers] = useState<Labeler[]>([])
+  const [rawMaterialTransfers, setRawMaterialTransfers] = useState<RawMaterialTransfer[]>([]) // Nuevo estado
+  const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([]) // Nuevo estado
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("dashboard")
+  const [isSubmittingRawMaterialTransfer, setIsSubmittingRawMaterialTransfer] = useState(false)
 
   const {
     exportToExcel,
@@ -159,15 +169,26 @@ export default function PVAProduction() {
 
       const materialsDataPromise = materialService.getAll()
       const ordersDataPromise = orderService.getAll()
-      const productionPlacesDataPromise = productionPlaceService.getAll() // Cargar lugares
-      const labelersDataPromise = labelerService.getAll() // Cargar rotuladores
+      const productionPlacesDataPromise = productionPlaceService.getAll()
+      const labelersDataPromise = labelerService.getAll()
+      const rawMaterialTransfersPromise = rawMaterialTransferService.getAll() // Cargar traslados MP
+      const finishedProductTransfersPromise = finishedProductTransferService.getAll() // Cargar traslados PT
 
-      Promise.all([materialsDataPromise, ordersDataPromise, productionPlacesDataPromise, labelersDataPromise])
-        .then(([materialsData, ordersData, placesData, labelersData]) => {
+      Promise.all([
+        materialsDataPromise,
+        ordersDataPromise,
+        productionPlacesDataPromise,
+        labelersDataPromise,
+        rawMaterialTransfersPromise,
+        finishedProductTransfersPromise,
+      ])
+        .then(([materialsData, ordersData, placesData, labelersData, rawTransfersData, finishedTransfersData]) => {
           setMaterials(materialsData)
           setOrders(ordersData)
-          setProductionPlaces(placesData) // Actualizar estado
-          setLabelers(labelersData) // Actualizar estado
+          setProductionPlaces(placesData)
+          setLabelers(labelersData)
+          setRawMaterialTransfers(rawTransfersData) // Actualizar estado
+          setFinishedProductTransfers(finishedTransfersData) // Actualizar estado
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Error cargando datos")
@@ -216,17 +237,6 @@ export default function PVAProduction() {
       setOrders((prev) => prev.filter((o) => o.id !== id))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error eliminando orden")
-    }
-  }
-
-  const handleUpdateOrderStatus = async (id: string, status: string) => {
-    try {
-      // La lógica de actualización de estado ya no es directamente aplicable a la nueva estructura de órdenes
-      // Si necesitas reintroducir un 'status' en la tabla production_orders, deberías añadirlo en el SQL y en el tipo ProductionOrder
-      // Por ahora, esta función no hará nada o lanzará un error si se llama.
-      setError("La actualización de estado directa no está implementada para la nueva estructura de órdenes.")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error actualizando orden")
     }
   }
 
@@ -301,11 +311,6 @@ export default function PVAProduction() {
 
           if (newOrders.length > 0) {
             try {
-              // Supabase no tiene un createMultiple para órdenes directamente en el servicio,
-              // pero podemos iterar o añadirlo si es necesario. Por ahora, se asume que
-              // la importación masiva de órdenes es menos común o se hará de otra forma.
-              // Para este ejemplo, solo se importará la primera orden si existe.
-              // Para importación masiva real, necesitarías un `orderService.createMultiple`.
               for (const orderData of newOrders) {
                 const createdOrder = await orderService.create(
                   orderData as Omit<ProductionOrder, "id" | "consecutive_number" | "creation_date" | "updated_at">,
@@ -383,6 +388,25 @@ export default function PVAProduction() {
       }
     }
     reader.readAsArrayBuffer(file)
+  }
+
+  // Función para manejar la creación de un traslado de materia prima
+  const handleCreateRawMaterialTransfer = async (data: {
+    material_id: string
+    quantity: number
+    transfer_employee_id: string
+    transfer_date: string
+  }) => {
+    setIsSubmittingRawMaterialTransfer(true)
+    try {
+      const newTransfer = await rawMaterialTransferService.create(data)
+      setRawMaterialTransfers((prev) => [newTransfer, ...prev])
+      alert("Traslado de materia prima registrado exitosamente.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al registrar traslado de materia prima.")
+    } finally {
+      setIsSubmittingRawMaterialTransfer(false)
+    }
   }
 
   const getStatusIcon = (status: string) => {
@@ -468,10 +492,15 @@ export default function PVAProduction() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
+            {" "}
+            {/* Aumentar a 6 columnas */}
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="orders">Órdenes</TabsTrigger>
             <TabsTrigger value="materials">Materiales</TabsTrigger>
+            <TabsTrigger value="raw-material-transfer">Materia Prima</TabsTrigger> {/* Nueva pestaña */}
+            <TabsTrigger value="production-management">Producción</TabsTrigger> {/* Nueva pestaña */}
+            <TabsTrigger value="finished-product-reception">Producto Terminado</TabsTrigger> {/* Nueva pestaña */}
             <TabsTrigger value="reports">Reportes</TabsTrigger>
           </TabsList>
 
@@ -834,6 +863,109 @@ export default function PVAProduction() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Nueva Pestaña: Materia Prima (Traslado) */}
+          <TabsContent value="raw-material-transfer" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Traslado de Materia Prima</h2>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nuevo Traslado
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[90vh] overflow-y-auto w-[95vw] max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Registrar Traslado de Materia Prima</DialogTitle>
+                  </DialogHeader>
+                  <RawMaterialTransferForm
+                    onSubmit={handleCreateRawMaterialTransfer}
+                    onCancel={() => {}} // No hay un botón de cancelar directo en el dialog, se cierra con el overlay
+                    isSubmitting={isSubmittingRawMaterialTransfer}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-900">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                          Material
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                          Cantidad
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                          Fecha Traslado
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                          Trasladado Por
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                          Estado
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {rawMaterialTransfers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-8 text-gray-500">
+                            No hay traslados de materia prima registrados.
+                          </td>
+                        </tr>
+                      ) : (
+                        rawMaterialTransfers.map((transfer) => (
+                          <tr key={transfer.id}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {transfer.material?.material_name || "N/A"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {transfer.quantity} {transfer.material?.unit || ""}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {new Date(transfer.transfer_date).toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {transfer.transfer_employee?.name || "N/A"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <Badge
+                                className={`${
+                                  transfer.status === "PENDIENTE"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : transfer.status === "RECIBIDO"
+                                      ? "bg-green-100 text-green-800"
+                                      : "bg-red-100 text-red-800"
+                                }`}
+                              >
+                                {transfer.status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Nueva Pestaña: Producción (Gestión de Traslados) */}
+          <TabsContent value="production-management" className="space-y-6">
+            <h2 className="text-xl font-semibold">Gestión de Producción</h2>
+            <ProductionManagement />
+          </TabsContent>
+
+          {/* Nueva Pestaña: Producto Terminado (Recepción en Bodega) */}
+          <TabsContent value="finished-product-reception" className="space-y-6">
+            <h2 className="text-xl font-semibold">Recepción de Producto Terminado en Bodega</h2>
+            <FinishedProductReception />
           </TabsContent>
 
           <TabsContent value="reports" className="space-y-6">
