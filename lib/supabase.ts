@@ -1,9 +1,8 @@
 import { createClient } from "@supabase/supabase-js"
 
 // Tus credenciales de Supabase
-const supabaseUrl = "https://xqkcfpoqlnbvifhevvgi.supabase.co"
-const supabaseAnonKey =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhxa2NmcG9xbG5idmlmaGV2dmdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI4NDU3NjcsImV4cCI6MjA2ODQyMTc2N30.w8fozIXXT01ugePkE8rkucOMc5MD-51L83WaMKSiV-0"
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
@@ -158,9 +157,9 @@ export const orderService = {
     const { data, error } = await supabase
       .from("production_orders")
       .select(`
-    *,
-    labeler:labelers(id, name, cedula)
-  `) // alias "labeler" para la relación 1-a-1
+  *,
+  labeler:labelers(id, name, cedula)
+`) // alias "labeler" para la relación 1-a-1
       .order("consecutive_number", { ascending: false })
 
     if (error) {
@@ -264,7 +263,6 @@ export const labelerService = {
   },
 
   async exportTemplate(): Promise<Labeler[]> {
-    // Retorna estructura para plantilla de Excel
     return [
       {
         id: "",
@@ -278,17 +276,16 @@ export const labelerService = {
   },
 }
 
-// Nuevos servicios para traslados
 export const rawMaterialTransferService = {
   async getAll(): Promise<RawMaterialTransfer[]> {
     const { data, error } = await supabase
       .from("raw_material_transfers")
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit),
-        transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
-        received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit),
+      transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
+      received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
+    `)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -308,10 +305,10 @@ export const rawMaterialTransferService = {
       .from("raw_material_transfers")
       .insert([transfer])
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit),
-        transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit),
+      transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula)
+    `)
       .single()
 
     if (error) {
@@ -335,11 +332,11 @@ export const rawMaterialTransferService = {
       .update(updates)
       .eq("id", id)
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit),
-        transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
-        received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit),
+      transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
+      received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
+    `)
       .single()
 
     if (error) {
@@ -364,11 +361,11 @@ export const finishedProductTransferService = {
     const { data, error } = await supabase
       .from("finished_product_transfers")
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit),
-        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
-        received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit),
+      transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+      received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+    `)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -388,10 +385,10 @@ export const finishedProductTransferService = {
       .from("finished_product_transfers")
       .insert([transfer])
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit),
-        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit),
+      transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula)
+    `)
       .single()
 
     if (error) {
@@ -415,11 +412,11 @@ export const finishedProductTransferService = {
       .update(updates)
       .eq("id", id)
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit),
-        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
-        received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit),
+      transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+      received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+    `)
       .single()
 
     if (error) {
@@ -439,7 +436,6 @@ export const finishedProductTransferService = {
   },
 }
 
-// Función para probar la conexión
 export const testConnection = async () => {
   try {
     const { data, error } = await supabase.from("materials").select("count", { count: "exact", head: true })
