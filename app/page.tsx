@@ -27,6 +27,7 @@ import {
   Clock,
   Archive,
   RefreshCw,
+  Beef,
 } from "lucide-react"
 import {
   materialService,
@@ -468,9 +469,14 @@ export default function PVAProduction() {
       <header className="bg-gray-900 shadow-lg border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <div>
-              <h1 className="text-2xl font-bold text-white">PVA PRODUCCIÓN</h1>
-              <p className="text-sm text-blue-300">Sistema de Gestión y Trazabilidad</p>
+            <div className="flex items-center">
+              {" "}
+              {/* Contenedor para el logo y el título */}
+              <Beef className="h-6 w-6 mr-2 text-red-400" /> {/* Icono de carne */}
+              <div>
+                <h1 className="text-2xl font-bold text-white">PVA PRODUCCIÓN</h1>
+                <p className="text-sm text-blue-300">Sistema de Gestión y Trazabilidad</p>
+              </div>
             </div>
             <div className="flex gap-2">
               <Button
@@ -505,16 +511,29 @@ export default function PVAProduction() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7">
-            {" "}
-            {/* Aumentar a 7 columnas */}
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="orders">Órdenes</TabsTrigger>
-            <TabsTrigger value="materials">Materiales</TabsTrigger>
-            <TabsTrigger value="raw-material-transfer">Materia Prima</TabsTrigger> {/* Nueva pestaña */}
-            <TabsTrigger value="production-management">Producción</TabsTrigger> {/* Nueva pestaña */}
-            <TabsTrigger value="finished-product-reception">Producto Terminado</TabsTrigger> {/* Nueva pestaña */}
-            <TabsTrigger value="reports">Reportes</TabsTrigger>
+          {/* TabsList responsivo para móvil */}
+          <TabsList className="flex w-full overflow-x-auto whitespace-nowrap pb-2">
+            <TabsTrigger value="dashboard" className="min-w-fit px-4 py-2">
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="orders" className="min-w-fit px-4 py-2">
+              Órdenes
+            </TabsTrigger>
+            <TabsTrigger value="materials" className="min-w-fit px-4 py-2">
+              Materiales
+            </TabsTrigger>
+            <TabsTrigger value="raw-material-transfer" className="min-w-fit px-4 py-2">
+              Materia Prima
+            </TabsTrigger>
+            <TabsTrigger value="production-management" className="min-w-fit px-4 py-2">
+              Producción
+            </TabsTrigger>
+            <TabsTrigger value="finished-product-reception" className="min-w-fit px-4 py-2">
+              Producto Terminado
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="min-w-fit px-4 py-2">
+              Reportes
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
