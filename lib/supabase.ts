@@ -91,6 +91,8 @@ export interface FinishedProductTransfer {
   created_at: string
   updated_at: string
   packaging_materials_used?: ProducedItem[] // NUEVA PROPIEDAD
+  num_boxes?: number | null // NUEVA PROPIEDAD: Cantidad de cajas
+  byproducts_transferred?: ProducedItem[] // NUEVA PROPIEDAD: Subproductos asociados al traslado
   // Propiedades para relaciones (opcional, para joins)
   material?: Material
   transfer_employee?: Labeler
@@ -318,11 +320,11 @@ export const rawMaterialTransferService = {
     const { data, error } = await supabase
       .from("raw_material_transfers")
       .select(`
-      *,
-      material:materials(id, material_code, material_name, unit),
-      transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
-      received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
-    `)
+    *,
+    material:materials(id, material_code, material_name, unit),
+    transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
+    received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
+  `)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -342,10 +344,10 @@ export const rawMaterialTransferService = {
       .from("raw_material_transfers")
       .insert([transfer])
       .select(`
-      *,
-      material:materials(id, material_code, material_name, unit),
-      transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula)
-    `)
+    *,
+    material:materials(id, material_code, material_name, unit),
+    transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula)
+  `)
       .single()
 
     if (error) {
@@ -369,11 +371,11 @@ export const rawMaterialTransferService = {
       .update(updates)
       .eq("id", id)
       .select(`
-      *,
-      material:materials(id, material_code, material_name, unit),
-      transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
-      received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
-    `)
+    *,
+    material:materials(id, material_code, material_name, unit),
+    transfer_employee:labelers!raw_material_transfers_transfer_employee_id_fkey(id, name, cedula),
+    received_employee:labelers!raw_material_transfers_received_employee_id_fkey(id, name, cedula)
+  `)
       .single()
 
     if (error) {
@@ -398,11 +400,11 @@ export const finishedProductTransferService = {
     const { data, error } = await supabase
       .from("finished_product_transfers")
       .select(`
-          *,
-          material:materials(id, material_code, material_name, unit, type),
-          transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
-          received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
-        `)
+        *,
+        material:materials(id, material_code, material_name, unit, type),
+        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+        received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+      `)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -422,10 +424,12 @@ export const finishedProductTransferService = {
       .from("finished_product_transfers")
       .insert([transfer])
       .select(`
-          *,
-          material:materials(id, material_code, material_name, unit, type),
-          transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula)
-        `)
+        *,
+        material:materials(id, material_code, material_name, unit, type),
+        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+        num_boxes,
+        byproducts_transferred
+      `) // Asegúrate de que num_boxes y byproducts_transferred se seleccionan aquí
       .single()
 
     if (error) {
@@ -449,11 +453,13 @@ export const finishedProductTransferService = {
       .update(updates)
       .eq("id", id)
       .select(`
-          *,
-          material:materials(id, material_code, material_name, unit, type),
-          transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
-          received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
-        `)
+        *,
+        material:materials(id, material_code, material_name, unit, type),
+        transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+        received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula),
+        num_boxes,
+        byproducts_transferred
+      `) // Asegúrate de que num_boxes y byproducts_transferred se seleccionan aquí
       .single()
 
     if (error) {
@@ -479,9 +485,9 @@ export const productionPlanService = {
     const { data, error } = await supabase
       .from("production_plans")
       .select(`
-        *,
-        material:materials(id, material_code, material_name, unit, type)
-      `)
+      *,
+      material:materials(id, material_code, material_name, unit, type)
+    `)
       .order("planned_date", { ascending: false })
       .order("created_at", { ascending: false })
 
