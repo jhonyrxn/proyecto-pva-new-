@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { productionPlanService, type ProductionPlan, type Material } from "@/lib/supabase"
-import { Loader2, Calendar, Trash2 } from "lucide-react"
+import { Loader2, Calendar, Trash2, Filter } from "lucide-react"
 
 interface ProductionPlanTableProps {
   materials: Material[]
@@ -16,7 +16,8 @@ export default function ProductionPlanTable({ materials, adminKey }: ProductionP
   const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filterDate, setFilterDate] = useState("")
+  const [filterStartDate, setFilterStartDate] = useState("")
+  const [filterEndDate, setFilterEndDate] = useState("")
   const [filterReference, setFilterReference] = useState("")
 
   const loadData = useCallback(async () => {
@@ -54,7 +55,20 @@ export default function ProductionPlanTable({ materials, adminKey }: ProductionP
   }
 
   const filteredPlans = productionPlans.filter((plan) => {
-    const matchesDate = filterDate ? plan.planned_date === filterDate : true
+    const planDate = new Date(plan.planned_date)
+    let matchesDate = true
+
+    if (filterStartDate && filterEndDate) {
+      const start = new Date(filterStartDate)
+      const end = new Date(filterEndDate)
+      // Ajustar la fecha final para incluir todo el día
+      end.setDate(end.getDate() + 1) // Add one day to include the end date
+      matchesDate = planDate >= start && planDate < end
+    } else if (filterStartDate) {
+      const start = new Date(filterStartDate)
+      matchesDate = planDate.toISOString().split("T")[0] === start.toISOString().split("T")[0]
+    }
+
     const matchesReference = filterReference
       ? plan.material?.material_code?.toLowerCase().includes(filterReference.toLowerCase()) ||
         plan.material?.material_name?.toLowerCase().includes(filterReference.toLowerCase())
@@ -83,14 +97,28 @@ export default function ProductionPlanTable({ materials, adminKey }: ProductionP
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-orange-600" />
+            <Filter className="h-5 w-5 text-orange-600" />
             Filtros de Planificación
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <Label htmlFor="filter-date">Fecha Específica</Label>
-            <Input id="filter-date" type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+            <Label htmlFor="filter-start-date">Fecha de Inicio</Label>
+            <Input
+              id="filter-start-date"
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="filter-end-date">Fecha de Fin</Label>
+            <Input
+              id="filter-end-date"
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+            />
           </div>
           <div className="md:col-span-2">
             <Label htmlFor="filter-reference">Referencia (Código o Nombre)</Label>
@@ -114,25 +142,25 @@ export default function ProductionPlanTable({ materials, adminKey }: ProductionP
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Código Material
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Referencia
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Unidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Cantidad a Producir
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Fecha Requerida
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Fecha Creación
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -143,27 +171,29 @@ export default function ProductionPlanTable({ materials, adminKey }: ProductionP
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredPlans.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-gray-500">
+                    <td colSpan={7} className="text-center py-8 text-gray-500 border-t border-gray-200">
                       No hay planes de producción registrados o que coincidan con los filtros.
                     </td>
                   </tr>
                 ) : (
                   filteredPlans.map((plan) => (
                     <tr key={plan.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">
                         {plan.material?.material_code || "N/A"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
                         {plan.material?.material_name || "N/A"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
                         {plan.material?.unit || "N/A"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{plan.planned_quantity}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
+                        {plan.planned_quantity}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
                         {new Date(plan.planned_date).toLocaleDateString("es-ES")}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
                         {new Date(plan.created_at).toLocaleDateString("es-ES")}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
