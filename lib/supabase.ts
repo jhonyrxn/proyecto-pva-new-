@@ -96,6 +96,17 @@ export interface FinishedProductTransfer {
   received_employee?: Labeler
 }
 
+// Nueva interfaz para planes de producción
+export interface ProductionPlan {
+  id: string
+  material_id: string
+  planned_quantity: number
+  planned_date: string
+  created_at: string
+  updated_at: string
+  material?: Material // Para la relación con la tabla de materiales
+}
+
 // Funciones para interactuar con la base de datos
 export const materialService = {
   async getAll(): Promise<Material[]> {
@@ -157,9 +168,9 @@ export const orderService = {
     const { data, error } = await supabase
       .from("production_orders")
       .select(`
-  *,
-  labeler:labelers(id, name, cedula)
-`) // alias "labeler" para la relación 1-a-1
+    *,
+    labeler:labelers(id, name, cedula)
+  `) // alias "labeler" para la relación 1-a-1
       .order("consecutive_number", { ascending: false })
 
     if (error) {
@@ -276,6 +287,7 @@ export const labelerService = {
   },
 }
 
+// Nuevos servicios para traslados
 export const rawMaterialTransferService = {
   async getAll(): Promise<RawMaterialTransfer[]> {
     const { data, error } = await supabase
@@ -432,6 +444,57 @@ export const finishedProductTransferService = {
     if (error) {
       console.error("Error deleting finished product transfer:", error)
       throw new Error(`Error eliminando traslado de producto terminado: ${error.message}`)
+    }
+  },
+}
+
+// Nuevo servicio para planes de producción
+export const productionPlanService = {
+  async getAll(): Promise<ProductionPlan[]> {
+    const { data, error } = await supabase
+      .from("production_plans")
+      .select(`
+        *,
+        material:materials(id, material_code, material_name, unit, type)
+      `)
+      .order("planned_date", { ascending: false })
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Error loading production plans:", error)
+      throw new Error(`Error cargando planes de producción: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async create(plan: Omit<ProductionPlan, "id" | "created_at" | "updated_at" | "material">): Promise<ProductionPlan> {
+    const { data, error } = await supabase.from("production_plans").insert([plan]).select().single()
+
+    if (error) {
+      console.error("Error creating production plan:", error)
+      throw new Error(`Error creando plan de producción: ${error.message}`)
+    }
+    return data
+  },
+
+  async createMultiple(
+    plans: Omit<ProductionPlan, "id" | "created_at" | "updated_at" | "material">[],
+  ): Promise<ProductionPlan[]> {
+    const { data, error } = await supabase.from("production_plans").insert(plans).select()
+
+    if (error) {
+      console.error("Error creating multiple production plans:", error)
+      throw new Error(`Error creando múltiples planes de producción: ${error.message}`)
+    }
+    return data || []
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from("production_plans").delete().eq("id", id)
+
+    if (error) {
+      console.error("Error deleting production plan:", error)
+      throw new Error(`Error eliminando plan de producción: ${error.message}`)
     }
   },
 }
