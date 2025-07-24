@@ -44,21 +44,23 @@ export default function ProductionPlanTable({
   }
 
   const filteredPlans = productionPlans.filter((plan) => {
-    // Convert plan.planned_date to a UTC Date object for consistent comparison
-    // Append 'T00:00:00Z' to ensure it's parsed as UTC midnight
+    // Convert plan.planned_date to a consistent UTC Date object (midnight)
     const planDateUTC = new Date(plan.planned_date + "T00:00:00Z")
     let matchesDate = true
 
     if (filterStartDate) {
-      // Convert filterStartDate to a UTC Date object (start of the day)
+      // Convert filterStartDate to a consistent UTC Date object (midnight)
       const startDateUTC = new Date(filterStartDate + "T00:00:00Z")
 
       if (filterEndDate) {
-        // Convert filterEndDate to a UTC Date object (end of the day)
-        const endDateUTC = new Date(filterEndDate + "T23:59:59Z")
-        matchesDate = planDateUTC.getTime() >= startDateUTC.getTime() && planDateUTC.getTime() <= endDateUTC.getTime()
+        // Convert filterEndDate to a consistent UTC Date object (midnight of the *next* day)
+        // This makes the range [startDate, endDate + 1 day)
+        const endDateUTC = new Date(filterEndDate + "T00:00:00Z")
+        endDateUTC.setUTCDate(endDateUTC.getUTCDate() + 1) // Add one day to include the end date fully
+
+        matchesDate = planDateUTC.getTime() >= startDateUTC.getTime() && planDateUTC.getTime() < endDateUTC.getTime()
       } else {
-        // If only start date is set, match exact day (compare UTC timestamps)
+        // If only start date is set, match exact day
         matchesDate = planDateUTC.getTime() === startDateUTC.getTime()
       }
     }
