@@ -15,8 +15,8 @@ import {
   type Material,
   type ProducedItem,
 } from "@/lib/supabase"
-import { Loader2, CheckCircle, XCircle, Warehouse, Trash2, Plus } from "lucide-react"
-import { Package, Recycle, Archive } from "lucide-react" // Declare the missing variables
+import { Loader2, CheckCircle, XCircle, Warehouse, Trash2, Plus } from 'lucide-react'
+import { Package, Recycle, Archive } from 'lucide-react' // Declare the missing variables
 
 interface PackagingManagementProps {
   materials: Material[]
