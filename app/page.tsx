@@ -265,6 +265,15 @@ export default function PVAProduction() {
     }
   }
 
+  const handleDeleteProductionPlan = async (id: string) => {
+    try {
+      await productionPlanService.delete(id)
+      setProductionPlans((prev) => prev.filter((plan) => plan.id !== id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error eliminando plan de producción")
+    }
+  }
+
   const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -730,7 +739,13 @@ export default function PVAProduction() {
                 </Button>
               </div>
             </div>
-            <ProductionPlanTable materials={materials} adminKey={ADMIN_KEY} />
+            <ProductionPlanTable
+              productionPlans={productionPlans}
+              materials={materials}
+              adminKey={ADMIN_KEY}
+              loading={loading}
+              onDeletePlan={handleDeleteProductionPlan}
+            />
           </TabsContent>
 
           {/* Pestaña Materia Prima (Ahora con RawMaterialManagement) */}
