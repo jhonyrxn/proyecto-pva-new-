@@ -1,41 +1,31 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { productionPlanService, type ProductionPlan, type Material } from "@/lib/supabase"
+import type { ProductionPlan, Material } from "@/lib/supabase"
 import { Loader2, Calendar, Trash2, Filter } from "lucide-react"
 
 interface ProductionPlanTableProps {
+  productionPlans: ProductionPlan[]
   materials: Material[]
   adminKey: string
+  loading: boolean
+  onDeletePlan: (id: string) => Promise<void>
 }
 
-export default function ProductionPlanTable({ materials, adminKey }: ProductionPlanTableProps) {
-  const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>([])
-  const [loading, setLoading] = useState(true)
+export default function ProductionPlanTable({
+  productionPlans,
+  materials,
+  adminKey,
+  loading,
+  onDeletePlan,
+}: ProductionPlanTableProps) {
   const [error, setError] = useState<string | null>(null)
   const [filterStartDate, setFilterStartDate] = useState("")
   const [filterEndDate, setFilterEndDate] = useState("")
   const [filterReference, setFilterReference] = useState("")
-
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const plans = await productionPlanService.getAll()
-      setProductionPlans(plans)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error cargando planes de producción")
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
 
   const handleDeletePlan = async (id: string) => {
     const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este plan:")
@@ -46,8 +36,7 @@ export default function ProductionPlanTable({ materials, adminKey }: ProductionP
     if (!confirm("¿Estás seguro de eliminar este plan de producción? Esta acción es irreversible.")) return
 
     try {
-      await productionPlanService.delete(id)
-      setProductionPlans((prev) => prev.filter((plan) => plan.id !== id))
+      await onDeletePlan(id) // Call the parent's delete function
       alert("Plan de producción eliminado exitosamente.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al eliminar plan de producción")
