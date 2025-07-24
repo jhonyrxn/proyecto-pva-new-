@@ -48,14 +48,11 @@ export default function ProductionPlanTable({
     let matchesDate = true
 
     if (filterStartDate && filterEndDate) {
-      const start = new Date(filterStartDate)
-      const end = new Date(filterEndDate)
-      // Ajustar la fecha final para incluir todo el día
-      end.setDate(end.getDate() + 1) // Add one day to include the end date
-      matchesDate = planDate >= start && planDate < end
+      // Direct string comparison for YYYY-MM-DD dates
+      matchesDate = plan.planned_date >= filterStartDate && plan.planned_date <= filterEndDate
     } else if (filterStartDate) {
-      const start = new Date(filterStartDate)
-      matchesDate = planDate.toISOString().split("T")[0] === start.toISOString().split("T")[0]
+      // If only start date is set, match exact date
+      matchesDate = plan.planned_date === filterStartDate
     }
 
     const matchesReference = filterReference
