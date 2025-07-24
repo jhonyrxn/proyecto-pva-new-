@@ -411,10 +411,39 @@ export default function PVAProduction() {
                 importErrors.push(`Material con código ${materialCode} no encontrado o no es Producto Terminado.`)
                 return null
               }
+              let plannedDate: string | null = null
+              const rawDate = row["Fecha de Producción Requerida (YYYY-MM-DD)"]
+
+              if (typeof rawDate === "number") {
+                // Convertir número de fecha de Excel a objeto Date de JS
+                const dateObj = XLSX.SSF.parse_date_code(rawDate)
+                // El mes en JS es 0-indexado, en XLSX.SSF.parse_date_code es 1-indexado
+                const jsDate = new Date(dateObj.y, dateObj.m - 1, dateObj.d)
+                plannedDate = jsDate.toISOString().split("T")[0] // Formato YYYY-MM-DD
+              } else if (typeof rawDate === "string") {
+                // Si ya es un string, asumimos que está en formato YYYY-MM-DD o similar
+                // Se puede añadir una validación más robusta si es necesario
+                if (rawDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  plannedDate = rawDate
+                } else {
+                  importErrors.push(
+                    `Formato de fecha inválido para el plan de producción: "${rawDate}". Se esperaba YYYY-MM-DD.`,
+                  )
+                  return null
+                }
+              } else {
+                importErrors.push(`Tipo de dato de fecha inválido para el plan de producción: "${rawDate}".`)
+                return null
+              }
+
+              if (!plannedDate) {
+                return null // Saltar si el parseo de fecha falló
+              }
+
               return {
                 material_id: material.id,
                 planned_quantity: Number(row["Cantidad a Producir"]),
-                planned_date: row["Fecha de Producción Requerida (YYYY-MM-DD)"],
+                planned_date: plannedDate,
               }
             })
             .filter(Boolean)
