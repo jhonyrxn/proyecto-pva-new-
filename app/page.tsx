@@ -32,31 +32,35 @@ import {
 } from "lucide-react"
 import {
   materialService,
-  orderService, // Mantener por si se usa en otro lado, pero no en la UI principal de tabs
+  orderService,
   productionPlaceService,
   labelerService,
   rawMaterialTransferService,
   finishedProductTransferService,
-  productionPlanService, // Nuevo servicio
+  productionPlanService,
   testConnection,
   type Material,
-  type ProductionOrder, // Mantener por si se usa en otro lado
+  type ProductionOrder,
   type ProductionPlace,
   type Labeler,
   type RawMaterialTransfer,
   type FinishedProductTransfer,
-  type ProductionPlan, // Nuevo tipo
+  type ProductionPlan,
 } from "@/lib/supabase"
 import { useExcelExport } from "@/hooks/useExcelExport"
-import RawMaterialManagement from "@/components/raw-material-management" // Nuevo componente
-import FinishedProductManagement from "@/components/finished-product-management" // Nuevo componente
-import ProductionPlanTable from "@/components/production-plan-table" // Nuevo componente
+import RawMaterialManagement from "@/components/raw-material-management"
+import RawMaterialReception from "@/components/raw-material-reception"
+import PackagingManagement from "@/components/packaging-management"
+import FinalProductReception from "@/components/final-product-reception"
+import ProductionPlanTable from "@/components/production-plan-table"
+import ProductionOverview from "@/components/production-overview"
 
 const ProductionOrderStatus = {
   PENDING: "PENDIENTE",
   IN_PROGRESS: "EN PRODUCCIÓN",
   COMPLETED: "COMPLETADO",
   IN_WAREHOUSE: "EN BODEGA",
+  TRANSFERRED_TO_PACKAGING: "TRANSFERIDO_A_EMPAQUE",
 }
 
 const MaterialType = {
@@ -133,18 +137,58 @@ const ConnectionStatus = () => {
   )
 }
 
+const getStatusBadge = (status: string) => {
+  let colorClass = ""
+  switch (status) {
+    case ProductionOrderStatus.PENDING:
+      colorClass = "bg-yellow-100 text-yellow-800"
+      break
+    case ProductionOrderStatus.IN_PROGRESS:
+      colorClass = "bg-blue-100 text-blue-800"
+      break
+    case ProductionOrderStatus.COMPLETED:
+      colorClass = "bg-green-100 text-green-800"
+      break
+    case ProductionOrderStatus.IN_WAREHOUSE:
+      colorClass = "bg-purple-100 text-purple-800"
+      break
+    case ProductionOrderStatus.TRANSFERRED_TO_PACKAGING:
+      colorClass = "bg-orange-100 text-orange-800"
+      break
+    default:
+      colorClass = "bg-gray-100 text-gray-800"
+  }
+  return <Badge className={`${colorClass} text-xs`}>{status}</Badge>
+}
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case ProductionOrderStatus.PENDING:
+      return <Clock className="h-4 w-4 text-yellow-500" />
+    case ProductionOrderStatus.IN_PROGRESS:
+      return <Factory className="h-4 w-4 text-blue-500" />
+    case ProductionOrderStatus.COMPLETED:
+      return <CheckCircle className="h-4 w-4 text-green-500" />
+    case ProductionOrderStatus.IN_WAREHOUSE:
+      return <Archive className="h-4 w-4 text-purple-500" />
+    case ProductionOrderStatus.TRANSFERRED_TO_PACKAGING:
+      return <Package className="h-4 w-4 text-orange-500" />
+    default:
+      return <AlertCircle className="h-4 w-4 text-gray-500" />
+  }
+}
+
 export default function PVAProduction() {
   const [materials, setMaterials] = useState<Material[]>([])
-  const [orders, setOrders] = useState<ProductionOrder[]>([]) // Mantener para exportación completa
+  const [orders, setOrders] = useState<ProductionOrder[]>([])
   const [productionPlaces, setProductionPlaces] = useState<ProductionPlace[]>([])
   const [labelers, setLabelers] = useState<Labeler[]>([])
   const [rawMaterialTransfers, setRawMaterialTransfers] = useState<RawMaterialTransfer[]>([])
   const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([])
-  const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>([]) // Nuevo estado
+  const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("dashboard")
-  const [isSubmittingRawMaterialTransfer, setIsSubmittingRawMaterialTransfer] = useState(false)
 
   const {
     exportToExcel,
@@ -153,7 +197,7 @@ export default function PVAProduction() {
     exportOrdersTemplate,
     exportProductionPlacesTemplate,
     exportLabelersTemplate,
-    exportProductionPlanTemplate, // Nueva función de exportación
+    exportProductionPlanTemplate,
   } = useExcelExport()
 
   const [newMaterial, setNewMaterial] = useState({
@@ -172,12 +216,12 @@ export default function PVAProduction() {
       setError(null)
 
       const materialsDataPromise = materialService.getAll()
-      const ordersDataPromise = orderService.getAll() // Cargar órdenes para exportación completa
+      const ordersDataPromise = orderService.getAll()
       const productionPlacesDataPromise = productionPlaceService.getAll()
       const labelersDataPromise = labelerService.getAll()
       const rawMaterialTransfersPromise = rawMaterialTransferService.getAll()
       const finishedProductTransfersPromise = finishedProductTransferService.getAll()
-      const productionPlansPromise = productionPlanService.getAll() // Cargar planes de producción
+      const productionPlansPromise = productionPlanService.getAll()
 
       Promise.all([
         materialsDataPromise,
@@ -186,7 +230,7 @@ export default function PVAProduction() {
         labelersDataPromise,
         rawMaterialTransfersPromise,
         finishedProductTransfersPromise,
-        productionPlansPromise, // Añadir a la promesa
+        productionPlansPromise,
       ])
         .then(
           ([
@@ -204,7 +248,7 @@ export default function PVAProduction() {
             setLabelers(labelersData)
             setRawMaterialTransfers(rawTransfersData)
             setFinishedProductTransfers(finishedTransfersData)
-            setProductionPlans(productionPlansData) // Actualizar estado
+            setProductionPlans(productionPlansData)
           },
         )
         .catch((err) => {
@@ -492,45 +536,64 @@ export default function PVAProduction() {
     transfer_employee_id: string
     transfer_date: string
   }) => {
-    setIsSubmittingRawMaterialTransfer(true)
     try {
       const newTransfer = await rawMaterialTransferService.create(data)
       setRawMaterialTransfers((prev) => [newTransfer, ...prev])
       alert("Traslado de materia prima registrado exitosamente.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al registrar traslado de materia prima.")
-    } finally {
-      setIsSubmittingRawMaterialTransfer(false)
     }
   }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case ProductionOrderStatus.PENDING:
-        return <Clock className="h-4 w-4 text-yellow-500" />
-      case ProductionOrderStatus.IN_PROGRESS:
-        return <Factory className="h-4 w-4 text-blue-500" />
-      case ProductionOrderStatus.COMPLETED:
-        return <CheckCircle className="h-4 w-4 text-green-500" />
-      case ProductionOrderStatus.IN_WAREHOUSE:
-        return <Archive className="h-4 w-4 text-purple-500" />
-      default:
-        return <AlertCircle className="h-4 w-4 text-gray-500" />
+  const handleReceiveRawMaterial = async (transferId: string, receivedQuantity: number, receivedEmployeeId: string) => {
+    if (!receivedEmployeeId) {
+      alert("Por favor, selecciona el empleado que recibe.")
+      return
+    }
+    if (receivedQuantity <= 0) {
+      alert("La cantidad recibida debe ser mayor que cero.")
+      return
+    }
+
+    try {
+      const updatedTransfer = await rawMaterialTransferService.update(transferId, {
+        status: "RECIBIDO",
+        received_quantity: receivedQuantity,
+        received_employee_id: receivedEmployeeId,
+        received_at: new Date().toISOString(),
+      })
+      setRawMaterialTransfers((prev) => prev.map((t) => (t.id === transferId ? updatedTransfer : t)))
+      alert("Materia prima recibida exitosamente.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al recibir materia prima")
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case ProductionOrderStatus.PENDING:
-        return "bg-yellow-100 text-yellow-800"
-      case ProductionOrderStatus.IN_PROGRESS:
-        return "bg-blue-100 text-blue-800"
-      case ProductionOrderStatus.COMPLETED:
-        return "bg-green-100 text-green-800"
-      case ProductionOrderStatus.IN_WAREHOUSE:
-        return "bg-purple-100 text-purple-800"
-      default:
-        return "bg-gray-100 text-gray-800"
+  const handleRejectRawMaterial = async (transferId: string) => {
+    if (!confirm("¿Estás seguro de rechazar este traslado de materia prima?")) return
+    try {
+      const updatedTransfer = await rawMaterialTransferService.update(transferId, { status: "RECHAZADO" })
+      setRawMaterialTransfers((prev) => prev.map((t) => (t.id === transferId ? updatedTransfer : t)))
+      alert("Traslado de materia prima rechazado.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al rechazar materia prima")
+    }
+  }
+
+  const handleDeleteRawMaterialTransfer = async (id: string) => {
+    const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este traslado:")
+    if (enteredKey !== ADMIN_KEY) {
+      alert("Clave incorrecta. No se puede eliminar el traslado.")
+      return
+    }
+    if (!confirm("¿Estás seguro de eliminar este traslado de materia prima? Esta acción es irreversible.")) return
+
+    try {
+      await rawMaterialTransferService.delete(id)
+      setRawMaterialTransfers((prev) => prev.filter((t) => t.id !== id))
+      alert("Traslado de materia prima eliminado exitosamente.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al eliminar traslado de materia prima")
     }
   }
 
@@ -559,7 +622,7 @@ export default function PVAProduction() {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => exportToExcel(orders, materials, productionPlans)} // Incluir productionPlans
+                onClick={() => exportToExcel(orders, materials, productionPlans)}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Download className="h-4 w-4 mr-2" />
@@ -592,7 +655,7 @@ export default function PVAProduction() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList
             className="
-            grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6
+            grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 xl:grid-cols-7
             w-full
             overflow-x-auto lg:overflow-visible
             whitespace-nowrap lg:whitespace-normal
@@ -603,7 +666,9 @@ export default function PVAProduction() {
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="planning">Planificación</TabsTrigger>
             <TabsTrigger value="raw-material-management">Materia Prima</TabsTrigger>
-            <TabsTrigger value="finished-product-management">Producto Terminado</TabsTrigger>
+            <TabsTrigger value="production">Producción</TabsTrigger>
+            <TabsTrigger value="packaging">Empaque</TabsTrigger>
+            <TabsTrigger value="finished-product-reception">Producto Terminado</TabsTrigger>
             <TabsTrigger value="materials">Materiales</TabsTrigger>
             <TabsTrigger value="reports">Reportes</TabsTrigger>
           </TabsList>
@@ -663,55 +728,51 @@ export default function PVAProduction() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Órdenes Recientes</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {orders.slice(0, 5).map((order) => (
-                      <div key={order.id} className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">Orden #{order.consecutive_number || "N/A"}</p>
-                          <p className="text-sm text-gray-500">
-                            {order.produced_materials && order.produced_materials.length > 0
-                              ? order.produced_materials[0].material_name
-                              : "Sin productos"}
-                          </p>
-                        </div>
-                        <Badge variant="secondary">{order.production_place || "Sin lugar"}</Badge>
+            <Card>
+              <CardHeader>
+                <CardTitle>Órdenes Recientes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {orders.slice(0, 5).map((order) => (
+                    <div key={order.id} className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">Orden #{order.consecutive_number || "N/A"}</p>
+                        <p className="text-sm text-gray-500">
+                          {order.produced_materials && order.produced_materials.length > 0
+                            ? order.produced_materials[0].material_name
+                            : "Sin productos"}
+                        </p>
                       </div>
-                    ))}
-                    {orders.length === 0 && (
-                      <p className="text-gray-500 text-center py-4">No hay órdenes registradas</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                      <Badge variant="secondary">{order.production_place || "Sin lugar"}</Badge>
+                    </div>
+                  ))}
+                  {orders.length === 0 && <p className="text-gray-500 text-center py-4">No hay órdenes registradas</p>}
+                </div>
+              </CardContent>
+            </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Materiales por Tipo</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {Object.values(MaterialType).map((type) => {
-                      const count = materials.filter((m) => m.type === type).length
-                      return (
-                        <div key={type} className="flex items-center justify-between">
-                          <span className="text-sm font-medium">{type}</span>
-                          <Badge variant="secondary">{count}</Badge>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Materiales por Tipo</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {Object.values(MaterialType).map((type) => {
+                    const count = materials.filter((m) => m.type === type).length
+                    return (
+                      <div key={type} className="flex items-center justify-between">
+                        <span className="text-sm font-medium">{type}</span>
+                        <Badge variant="secondary">{count}</Badge>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
-          {/* Nueva Pestaña: Planificación */}
+          {/* Pestaña: Planificación */}
           <TabsContent value="planning" className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Planificación de Producción</h2>
@@ -748,16 +809,53 @@ export default function PVAProduction() {
             />
           </TabsContent>
 
-          {/* Pestaña Materia Prima (Ahora con RawMaterialManagement) */}
+          {/* Pestaña Materia Prima (Solo registro y historial de traslados) */}
           <TabsContent value="raw-material-management" className="space-y-6">
             <h2 className="text-xl font-semibold">Gestión de Materia Prima</h2>
-            <RawMaterialManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
+            <RawMaterialManagement
+              materials={materials}
+              labelers={labelers}
+              adminKey={ADMIN_KEY}
+              rawMaterialTransfers={rawMaterialTransfers}
+              onCreateRawMaterialTransfer={handleCreateRawMaterialTransfer}
+              onDeleteRawMaterialTransfer={handleDeleteRawMaterialTransfer}
+            />
           </TabsContent>
 
-          {/* Pestaña Producto Terminado (Ahora con FinishedProductManagement) */}
-          <TabsContent value="finished-product-management" className="space-y-6">
-            <h2 className="text-xl font-semibold">Gestión de Producto Terminado</h2>
-            <FinishedProductManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
+          {/* Pestaña: Producción (Generación de Traslado y Recepción de Materia Prima) */}
+          <TabsContent value="production" className="space-y-6">
+            <h2 className="text-xl font-semibold">Gestión de Producción</h2>
+            <ProductionOverview
+              orders={orders}
+              labelers={labelers}
+              materials={materials} // Pass materials here
+              onOrderUpdated={loadData}
+              adminKey={ADMIN_KEY}
+              productionOrderStatus={ProductionOrderStatus}
+              getStatusBadge={getStatusBadge}
+              getStatusIcon={getStatusIcon}
+            />
+            <RawMaterialReception
+              rawMaterialTransfers={rawMaterialTransfers}
+              materials={materials}
+              labelers={labelers}
+              adminKey={ADMIN_KEY}
+              onReceiveRawMaterial={handleReceiveRawMaterial}
+              onRejectRawMaterial={handleRejectRawMaterial}
+              onDeleteRawMaterialTransfer={handleDeleteRawMaterialTransfer}
+            />
+          </TabsContent>
+
+          {/* Pestaña: Empaque */}
+          <TabsContent value="packaging" className="space-y-6">
+            <h2 className="text-xl font-semibold">Gestión de Empaque</h2>
+            <PackagingManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
+          </TabsContent>
+
+          {/* Pestaña Producto Terminado (Recepción Final) */}
+          <TabsContent value="finished-product-reception" className="space-y-6">
+            <h2 className="text-xl font-semibold">Recepción Final de Producto Terminado</h2>
+            <FinalProductReception materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
           </TabsContent>
 
           <TabsContent value="materials" className="space-y-6">
