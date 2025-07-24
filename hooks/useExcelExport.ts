@@ -270,6 +270,7 @@ export const useExcelExport = () => {
     const templateData = [
       {
         "Código de Material": "PT-001", // Debe ser un código de material existente (Producto Terminado)
+        "Referencia (Nombre)": "Pastel de Chocolate", // Ejemplo de referencia
         "Cantidad a Producir": 100,
         "Fecha de Producción Requerida (YYYY-MM-DD)": "2024-08-01",
       },
@@ -277,6 +278,7 @@ export const useExcelExport = () => {
     const ws = XLSX.utils.json_to_sheet(templateData)
     ws["!cols"] = [
       { wch: 25 }, // Código de Material
+      { wch: 30 }, // Referencia (Nombre) - Nueva columna
       { wch: 25 }, // Cantidad a Producir
       { wch: 40 }, // Fecha de Producción Requerida
     ]
