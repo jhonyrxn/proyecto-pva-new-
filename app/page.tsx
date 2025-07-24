@@ -28,27 +28,29 @@ import {
   Archive,
   RefreshCw,
   Beef,
+  Calendar,
 } from "lucide-react"
 import {
   materialService,
-  orderService,
+  orderService, // Mantener por si se usa en otro lado, pero no en la UI principal de tabs
   productionPlaceService,
   labelerService,
-  rawMaterialTransferService, // Importar nuevo servicio
-  finishedProductTransferService, // Importar nuevo servicio
+  rawMaterialTransferService,
+  finishedProductTransferService,
+  productionPlanService, // Nuevo servicio
   testConnection,
   type Material,
-  type ProductionOrder,
+  type ProductionOrder, // Mantener por si se usa en otro lado
   type ProductionPlace,
   type Labeler,
-  type RawMaterialTransfer, // Importar nuevo tipo
-  type FinishedProductTransfer, // Importar nuevo tipo
+  type RawMaterialTransfer,
+  type FinishedProductTransfer,
+  type ProductionPlan, // Nuevo tipo
 } from "@/lib/supabase"
 import { useExcelExport } from "@/hooks/useExcelExport"
-import CreateOrderDialog from "@/components/create-order-dialog"
-import RawMaterialTransferForm from "@/components/raw-material-transfer-form" // Importar nuevo componente
-import ProductionManagement from "@/components/production-management" // Importar nuevo componente
-import FinishedProductReception from "@/components/finished-product-reception" // Importar nuevo componente
+import RawMaterialManagement from "@/components/raw-material-management" // Nuevo componente
+import FinishedProductManagement from "@/components/finished-product-management" // Nuevo componente
+import ProductionPlanTable from "@/components/production-plan-table" // Nuevo componente
 
 const ProductionOrderStatus = {
   PENDING: "PENDIENTE",
@@ -73,10 +75,8 @@ const UnitOfMeasure = {
   LITER: "litros",
 }
 
-// Clave de administrador para eliminaciones (¡IMPORTANTE: En un entorno real, esto debe ser manejado con autenticación segura!)
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "admin123" // Puedes cambiar "admin123" por tu clave deseada
+const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "admin123"
 
-// Componente para probar la conexión
 const ConnectionStatus = () => {
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
   const [connectionMessage, setConnectionMessage] = useState("")
@@ -135,11 +135,12 @@ const ConnectionStatus = () => {
 
 export default function PVAProduction() {
   const [materials, setMaterials] = useState<Material[]>([])
-  const [orders, setOrders] = useState<ProductionOrder[]>([])
+  const [orders, setOrders] = useState<ProductionOrder[]>([]) // Mantener para exportación completa
   const [productionPlaces, setProductionPlaces] = useState<ProductionPlace[]>([])
   const [labelers, setLabelers] = useState<Labeler[]>([])
-  const [rawMaterialTransfers, setRawMaterialTransfers] = useState<RawMaterialTransfer[]>([]) // Nuevo estado
-  const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([]) // Nuevo estado
+  const [rawMaterialTransfers, setRawMaterialTransfers] = useState<RawMaterialTransfer[]>([])
+  const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([])
+  const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>([]) // Nuevo estado
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("dashboard")
@@ -152,9 +153,9 @@ export default function PVAProduction() {
     exportOrdersTemplate,
     exportProductionPlacesTemplate,
     exportLabelersTemplate,
+    exportProductionPlanTemplate, // Nueva función de exportación
   } = useExcelExport()
 
-  // Estados para formularios
   const [newMaterial, setNewMaterial] = useState({
     material_code: "",
     material_name: "",
@@ -165,18 +166,18 @@ export default function PVAProduction() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Cargar datos iniciales
   const loadData = useCallback(() => {
     try {
       setLoading(true)
       setError(null)
 
       const materialsDataPromise = materialService.getAll()
-      const ordersDataPromise = orderService.getAll()
+      const ordersDataPromise = orderService.getAll() // Cargar órdenes para exportación completa
       const productionPlacesDataPromise = productionPlaceService.getAll()
       const labelersDataPromise = labelerService.getAll()
-      const rawMaterialTransfersPromise = rawMaterialTransferService.getAll() // Cargar traslados MP
-      const finishedProductTransfersPromise = finishedProductTransferService.getAll() // Cargar traslados PT
+      const rawMaterialTransfersPromise = rawMaterialTransferService.getAll()
+      const finishedProductTransfersPromise = finishedProductTransferService.getAll()
+      const productionPlansPromise = productionPlanService.getAll() // Cargar planes de producción
 
       Promise.all([
         materialsDataPromise,
@@ -185,15 +186,27 @@ export default function PVAProduction() {
         labelersDataPromise,
         rawMaterialTransfersPromise,
         finishedProductTransfersPromise,
+        productionPlansPromise, // Añadir a la promesa
       ])
-        .then(([materialsData, ordersData, placesData, labelersData, rawTransfersData, finishedTransfersData]) => {
-          setMaterials(materialsData)
-          setOrders(ordersData)
-          setProductionPlaces(placesData)
-          setLabelers(labelersData)
-          setRawMaterialTransfers(rawTransfersData) // Actualizar estado
-          setFinishedProductTransfers(finishedTransfersData) // Actualizar estado
-        })
+        .then(
+          ([
+            materialsData,
+            ordersData,
+            placesData,
+            labelersData,
+            rawTransfersData,
+            finishedTransfersData,
+            productionPlansData,
+          ]) => {
+            setMaterials(materialsData)
+            setOrders(ordersData)
+            setProductionPlaces(placesData)
+            setLabelers(labelersData)
+            setRawMaterialTransfers(rawTransfersData)
+            setFinishedProductTransfers(finishedTransfersData)
+            setProductionPlans(productionPlansData) // Actualizar estado
+          },
+        )
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Error cargando datos")
         })
@@ -209,7 +222,6 @@ export default function PVAProduction() {
     loadData()
   }, [loadData])
 
-  // Funciones para materiales
   const handleCreateMaterial = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -237,7 +249,6 @@ export default function PVAProduction() {
     }
   }
 
-  // Funciones para órdenes
   const handleDeleteOrder = async (id: string) => {
     const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar esta orden:")
     if (enteredKey !== ADMIN_KEY) {
@@ -254,7 +265,6 @@ export default function PVAProduction() {
     }
   }
 
-  // Función para importar desde Excel
   const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -310,7 +320,6 @@ export default function PVAProduction() {
                   produced_materials: JSON.parse(row["Productos Producidos (JSON)"] || "[]"),
                   byproducts: JSON.parse(row["Subproductos (JSON)"] || "[]"),
                   packaging_materials: JSON.parse(row["Materiales de Empaque (JSON)"] || "[]"),
-                  // Mantener compatibilidad con la estructura anterior si es necesario
                   finished_products: JSON.parse(row["Productos Producidos (JSON)"] || "[]"),
                   generated_byproducts: JSON.parse(row["Subproductos (JSON)"] || "[]"),
                 }
@@ -321,7 +330,7 @@ export default function PVAProduction() {
                 return null
               }
             })
-            .filter(Boolean) // Eliminar filas que no se pudieron parsear
+            .filter(Boolean)
 
           if (newOrders.length > 0) {
             try {
@@ -387,6 +396,42 @@ export default function PVAProduction() {
           }
         }
 
+        // Procesar hoja de planes de producción
+        if (workbook.SheetNames.includes("Plantilla Plan Producción")) {
+          const worksheet = workbook.Sheets["Plantilla Plan Producción"]
+          const jsonData = XLSX.utils.sheet_to_json(worksheet)
+
+          const newPlans = jsonData
+            .map((row: any) => {
+              const materialCode = row["Código de Material"]
+              const material = materials.find(
+                (m) => m.material_code === materialCode && m.type === MaterialType.FINISHED,
+              )
+              if (!material) {
+                importErrors.push(`Material con código ${materialCode} no encontrado o no es Producto Terminado.`)
+                return null
+              }
+              return {
+                material_id: material.id,
+                planned_quantity: Number(row["Cantidad a Producir"]),
+                planned_date: row["Fecha de Producción Requerida (YYYY-MM-DD)"],
+              }
+            })
+            .filter(Boolean)
+
+          if (newPlans.length > 0) {
+            try {
+              const createdPlans = await productionPlanService.createMultiple(
+                newPlans as Omit<ProductionPlan, "id" | "created_at" | "updated_at" | "material">[],
+              )
+              setProductionPlans((prev) => [...createdPlans, ...prev])
+              importedCount += createdPlans.length
+            } catch (err) {
+              importErrors.push(`Error al importar planes de producción: ${(err as Error).message}`)
+            }
+          }
+        }
+
         if (importErrors.length > 0) {
           setError(`Errores durante la importación: ${importErrors.join("; ")}`)
         } else {
@@ -395,7 +440,6 @@ export default function PVAProduction() {
       } catch (err) {
         setError("Error importando archivo: " + (err instanceof Error ? err.message : "Error desconocido"))
       } finally {
-        // Limpiar el input de archivo para permitir la misma selección de archivo de nuevo
         if (fileInputRef.current) {
           fileInputRef.current.value = ""
         }
@@ -404,7 +448,6 @@ export default function PVAProduction() {
     reader.readAsArrayBuffer(file)
   }
 
-  // Función para manejar la creación de un traslado de materia prima
   const handleCreateRawMaterialTransfer = async (data: {
     material_id: string
     quantity: number
@@ -470,9 +513,7 @@ export default function PVAProduction() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center">
-              {" "}
-              {/* Contenedor para el logo y el título */}
-              <Beef className="h-6 w-6 mr-2 text-red-400" /> {/* Icono de carne */}
+              <Beef className="h-6 w-6 mr-2 text-red-400" />
               <div>
                 <h1 className="text-2xl font-bold text-white">PVA PRODUCCIÓN</h1>
                 <p className="text-sm text-blue-300">Sistema de Gestión y Trazabilidad</p>
@@ -480,7 +521,7 @@ export default function PVAProduction() {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => exportToExcel(orders, materials)}
+                onClick={() => exportToExcel(orders, materials, productionPlans)} // Incluir productionPlans
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Download className="h-4 w-4 mr-2" />
@@ -511,29 +552,22 @@ export default function PVAProduction() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          {/* TabsList responsivo para móvil */}
-          <TabsList className="flex w-full overflow-x-auto whitespace-nowrap pb-2">
-            <TabsTrigger value="dashboard" className="min-w-fit px-4 py-2">
-              Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="orders" className="min-w-fit px-4 py-2">
-              Órdenes
-            </TabsTrigger>
-            <TabsTrigger value="materials" className="min-w-fit px-4 py-2">
-              Materiales
-            </TabsTrigger>
-            <TabsTrigger value="raw-material-transfer" className="min-w-fit px-4 py-2">
-              Materia Prima
-            </TabsTrigger>
-            <TabsTrigger value="production-management" className="min-w-fit px-4 py-2">
-              Producción
-            </TabsTrigger>
-            <TabsTrigger value="finished-product-reception" className="min-w-fit px-4 py-2">
-              Producto Terminado
-            </TabsTrigger>
-            <TabsTrigger value="reports" className="min-w-fit px-4 py-2">
-              Reportes
-            </TabsTrigger>
+          <TabsList
+            className="
+            grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6
+            w-full
+            overflow-x-auto lg:overflow-visible
+            whitespace-nowrap lg:whitespace-normal
+            pb-2
+            bg-gray-100 rounded-md p-1
+          "
+          >
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger value="planning">Planificación</TabsTrigger>
+            <TabsTrigger value="raw-material-management">Materia Prima</TabsTrigger>
+            <TabsTrigger value="finished-product-management">Producto Terminado</TabsTrigger>
+            <TabsTrigger value="materials">Materiales</TabsTrigger>
+            <TabsTrigger value="reports">Reportes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
@@ -639,96 +673,47 @@ export default function PVAProduction() {
             </div>
           </TabsContent>
 
-          <TabsContent value="orders" className="space-y-6">
+          {/* Nueva Pestaña: Planificación */}
+          <TabsContent value="planning" className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">Órdenes de Producción</h2>
+              <h2 className="text-xl font-semibold">Planificación de Producción</h2>
               <div className="flex gap-2">
                 <Button
-                  onClick={() => exportOrdersOnly(orders, materials)}
-                  className="border-blue-600 text-blue-600 hover:bg-blue-50"
+                  onClick={exportProductionPlanTemplate}
+                  className="border-orange-600 text-orange-600 hover:bg-orange-50"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Exportar Órdenes
+                  Exportar Plantilla
                 </Button>
-                <CreateOrderDialog onCreated={(o) => setOrders((prev) => [o, ...prev])} />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileImport}
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                />
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Importar Plan
+                </Button>
               </div>
             </div>
+            <ProductionPlanTable materials={materials} adminKey={ADMIN_KEY} />
+          </TabsContent>
 
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-900">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Orden
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Productos
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Cantidad Total
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Lugar
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Rotulador
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {orders.map((order) => (
-                        <tr key={order.id}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              Orden #{order.consecutive_number || "N/A"}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {order.order_date ? new Date(order.order_date).toLocaleDateString("es-ES") : "Sin fecha"}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {order.produced_materials && order.produced_materials.length > 0
-                              ? order.produced_materials.map((p) => p.material_name).join(", ")
-                              : "Sin productos"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {order.produced_materials && order.produced_materials.length > 0
-                              ? order.produced_materials.reduce((total, p) => total + (p.quantity || 0), 0)
-                              : 0}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {order.production_place || "Sin lugar"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {(order as any).labeler?.name || "N/A"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <Button
-                              onClick={() => handleDeleteOrder(order.id)}
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {orders.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      No hay órdenes registradas. ¡Crea tu primera orden!
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+          {/* Pestaña Materia Prima (Ahora con RawMaterialManagement) */}
+          <TabsContent value="raw-material-management" className="space-y-6">
+            <h2 className="text-xl font-semibold">Gestión de Materia Prima</h2>
+            <RawMaterialManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
+          </TabsContent>
+
+          {/* Pestaña Producto Terminado (Ahora con FinishedProductManagement) */}
+          <TabsContent value="finished-product-management" className="space-y-6">
+            <h2 className="text-xl font-semibold">Gestión de Producto Terminado</h2>
+            <FinishedProductManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
           </TabsContent>
 
           <TabsContent value="materials" className="space-y-6">
@@ -897,109 +882,6 @@ export default function PVAProduction() {
             </Card>
           </TabsContent>
 
-          {/* Nueva Pestaña: Materia Prima (Traslado) */}
-          <TabsContent value="raw-material-transfer" className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">Traslado de Materia Prima</h2>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Nuevo Traslado
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[90vh] overflow-y-auto w-[95vw] max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle>Registrar Traslado de Materia Prima</DialogTitle>
-                  </DialogHeader>
-                  <RawMaterialTransferForm
-                    onSubmit={handleCreateRawMaterialTransfer}
-                    onCancel={() => {}} // No hay un botón de cancelar directo en el dialog, se cierra con el overlay
-                    isSubmitting={isSubmittingRawMaterialTransfer}
-                  />
-                </DialogContent>
-              </Dialog>
-            </div>
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-900">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Material
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Cantidad
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Fecha Traslado
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Trasladado Por
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
-                          Estado
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {rawMaterialTransfers.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="text-center py-8 text-gray-500">
-                            No hay traslados de materia prima registrados.
-                          </td>
-                        </tr>
-                      ) : (
-                        rawMaterialTransfers.map((transfer) => (
-                          <tr key={transfer.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {transfer.material?.material_name || "N/A"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {transfer.quantity} {transfer.material?.unit || ""}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {new Date(transfer.transfer_date).toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {transfer.transfer_employee?.name || "N/A"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <Badge
-                                className={`${
-                                  transfer.status === "PENDIENTE"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : transfer.status === "RECIBIDO"
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-red-100 text-red-800"
-                                }`}
-                              >
-                                {transfer.status}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Nueva Pestaña: Producción (Gestión de Traslados) */}
-          <TabsContent value="production-management" className="space-y-6">
-            <h2 className="text-xl font-semibold">Gestión de Producción</h2>
-            <ProductionManagement materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
-          </TabsContent>
-
-          {/* Nueva Pestaña: Producto Terminado (Recepción en Bodega) */}
-          <TabsContent value="finished-product-reception" className="space-y-6">
-            <h2 className="text-xl font-semibold">Recepción de Producto Terminado en Bodega</h2>
-            <FinishedProductReception materials={materials} labelers={labelers} adminKey={ADMIN_KEY} />
-          </TabsContent>
-
           <TabsContent value="reports" className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Reportes y Exportación</h2>
@@ -1018,7 +900,7 @@ export default function PVAProduction() {
                     Exporta todas las órdenes, materiales y un resumen completo en un archivo Excel con múltiples hojas.
                   </p>
                   <Button
-                    onClick={() => exportToExcel(orders, materials)}
+                    onClick={() => exportToExcel(orders, materials, productionPlans)}
                     className="w-full bg-green-600 hover:bg-green-700"
                   >
                     Descargar Reporte Completo
@@ -1038,7 +920,7 @@ export default function PVAProduction() {
                     Exporta únicamente las órdenes de producción con todos sus detalles y estados.
                   </p>
                   <Button
-                    onClick={() => exportOrdersOnly(orders, materials)}
+                    onClick={() => exportOrdersOnly(orders)}
                     className="w-full border-blue-600 text-blue-600 hover:bg-blue-50"
                     variant="outline"
                   >
@@ -1122,6 +1004,23 @@ export default function PVAProduction() {
                     </Button>
                   </CardContent>
                 </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      Plantilla Planificación
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Descarga una plantilla para importar planes de producción por día.
+                    </p>
+                    <Button onClick={exportProductionPlanTemplate} className="w-full bg-transparent" variant="outline">
+                      Descargar Plantilla
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
             </div>
 
@@ -1151,13 +1050,16 @@ export default function PVAProduction() {
                     </div>
                     <div className="text-sm text-gray-500">Productos Terminados</div>
                   </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">{productionPlans.length}</div>
+                    <div className="text-sm text-gray-500">Total Planes</div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
 
-        {/* Estado de conexión pequeño */}
         <div className="mt-8 max-w-md mx-auto">
           <ConnectionStatus />
         </div>
