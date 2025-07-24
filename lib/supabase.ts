@@ -83,13 +83,14 @@ export interface FinishedProductTransfer {
   quantity: number
   transfer_date: string
   transfer_employee_id: string
-  status: "PENDIENTE" | "RECIBIDO" | "RECHAZADO"
+  status: "PENDIENTE" | "RECIBIDO" | "RECHAZADO" | "FINALIZADO_BODEGA" // Añadir nuevo estado
   received_quantity?: number | null
   received_employee_id?: string | null
   received_at?: string | null
   observations?: string | null
   created_at: string
   updated_at: string
+  packaging_materials_used?: ProducedItem[] // NUEVA PROPIEDAD
   // Propiedades para relaciones (opcional, para joins)
   material?: Material
   transfer_employee?: Labeler
@@ -188,6 +189,30 @@ export const orderService = {
     if (error) {
       console.error("Error creating order:", error)
       throw new Error(`Error creando orden: ${error.message}`)
+    }
+    return data
+  },
+
+  // NUEVO MÉTODO UPDATE
+  async update(
+    id: string,
+    updates: Partial<
+      Omit<ProductionOrder, "id" | "consecutive_number" | "creation_date" | "updated_at"> & { labeler?: Labeler }
+    >,
+  ): Promise<ProductionOrder> {
+    const { data, error } = await supabase
+      .from("production_orders")
+      .update(updates)
+      .eq("id", id)
+      .select(`
+            *,
+            labeler:labelers(id, name, cedula)
+          `)
+      .single()
+
+    if (error) {
+      console.error("Error updating order:", error)
+      throw new Error(`Error actualizando orden: ${error.message}`)
     }
     return data
   },
@@ -373,11 +398,11 @@ export const finishedProductTransferService = {
     const { data, error } = await supabase
       .from("finished_product_transfers")
       .select(`
-      *,
-      material:materials(id, material_code, material_name, unit),
-      transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
-      received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
-    `)
+          *,
+          material:materials(id, material_code, material_name, unit, type),
+          transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+          received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+        `)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -397,10 +422,10 @@ export const finishedProductTransferService = {
       .from("finished_product_transfers")
       .insert([transfer])
       .select(`
-      *,
-      material:materials(id, material_code, material_name, unit),
-      transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula)
-    `)
+          *,
+          material:materials(id, material_code, material_name, unit, type),
+          transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula)
+        `)
       .single()
 
     if (error) {
@@ -424,11 +449,11 @@ export const finishedProductTransferService = {
       .update(updates)
       .eq("id", id)
       .select(`
-      *,
-      material:materials(id, material_code, material_name, unit),
-      transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
-      received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
-    `)
+          *,
+          material:materials(id, material_code, material_name, unit, type),
+          transfer_employee:labelers!finished_product_transfers_transfer_employee_id_fkey(id, name, cedula),
+          received_employee:labelers!finished_product_transfers_received_employee_id_fkey(id, name, cedula)
+        `)
       .single()
 
     if (error) {
