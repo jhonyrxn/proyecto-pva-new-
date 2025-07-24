@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { ProductionPlan, Material } from "@/lib/supabase"
-import { Loader2, Calendar, Trash2, Filter } from "lucide-react"
+import { Loader2, Calendar, Trash2, Filter, ArrowUp, ArrowDown } from "lucide-react" // Importar iconos de ordenamiento
 
 interface ProductionPlanTableProps {
   productionPlans: ProductionPlan[]
@@ -26,6 +26,9 @@ export default function ProductionPlanTable({
   const [filterStartDate, setFilterStartDate] = useState("")
   const [filterEndDate, setFilterEndDate] = useState("")
   const [filterReference, setFilterReference] = useState("")
+  // Nuevos estados para el ordenamiento
+  const [sortColumn, setSortColumn] = useState<string | null>("planned_date") // Columna por defecto para ordenar
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc") // Dirección por defecto (más reciente primero)
 
   const handleDeletePlan = async (id: string) => {
     const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este plan:")
@@ -43,33 +46,111 @@ export default function ProductionPlanTable({
     }
   }
 
+  // Función para manejar el clic en el encabezado de la columna para ordenar
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Si es la misma columna, alternar la dirección
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      // Si es una nueva columna, establecerla y ordenar de forma descendente por defecto
+      setSortColumn(column)
+      setSortDirection("desc")
+    }
+  }
+
+  // Helper function to create a Date object representing the start of the day in local time.
+  // It now includes an option to add/subtract a specified number of days from the input date.
+  const createLocalMidnightDate = (dateString: string, offsetDays = 0) => {
+    if (!dateString) return null
+    const parts = dateString.split("-").map(Number)
+    const date = new Date(parts[0], parts[1] - 1, parts[2]) // Creates date in local timezone at midnight
+    date.setDate(date.getDate() + offsetDays) // Adjust the date by offsetDays
+    return date
+  }
+
+  // 1. Filtrar los planes
   const filteredPlans = productionPlans.filter((plan) => {
-    // Convert plan.planned_date to a consistent UTC Date object (midnight)
-    const planDateUTC = new Date(plan.planned_date + "T00:00:00Z")
+    const planDateObj = createLocalMidnightDate(plan.planned_date)
+    if (!planDateObj) return false // Skip if plan date is invalid
+    const planTimestamp = planDateObj.getTime()
+
     let matchesDate = true
 
     if (filterStartDate) {
-      // Convert filterStartDate to a consistent UTC Date object (midnight)
-      const startDateUTC = new Date(filterStartDate + "T00:00:00Z")
+      // Add one day to the user's input for filterStartDate
+      const startDateObj = createLocalMidnightDate(filterStartDate, 1)
+      if (!startDateObj) return false
+      const startTimestamp = startDateObj.getTime()
 
       if (filterEndDate) {
-        // Convert filterEndDate to a consistent UTC Date object (midnight of the *next* day)
-        // This makes the range [startDate, endDate + 1 day)
-        const endDateUTC = new Date(filterEndDate + "T00:00:00Z")
-        endDateUTC.setUTCDate(endDateUTC.getUTCDate() + 1) // Add one day to include the end date fully
+        // Add one day to the user's input for filterEndDate
+        const endDateObj = createLocalMidnightDate(filterEndDate, 1)
+        if (!endDateObj) return false
 
-        matchesDate = planDateUTC.getTime() >= startDateUTC.getTime() && planDateUTC.getTime() < endDateUTC.getTime()
+        // To make the end date inclusive, we compare up to the beginning of the *next* day
+        // This part is crucial for range inclusivity after the initial +1 day adjustment.
+        endDateObj.setDate(endDateObj.getDate() + 1)
+        const endTimestamp = endDateObj.getTime()
+
+        // A plan date matches if its timestamp is on or after the adjusted start date,
+        // AND strictly before the beginning of the day *after* the adjusted end date.
+        matchesDate = planTimestamp >= startTimestamp && planTimestamp < endTimestamp
       } else {
-        // If only start date is set, match exact day
-        matchesDate = planDateUTC.getTime() === startDateUTC.getTime()
+        // If only start date is set, match exact day (after adding one day to input)
+        matchesDate = planTimestamp === startTimestamp
       }
     }
 
+    // Lógica de filtrado por referencia
     const matchesReference = filterReference
       ? plan.material?.material_code?.toLowerCase().includes(filterReference.toLowerCase()) ||
         plan.material?.material_name?.toLowerCase().includes(filterReference.toLowerCase())
       : true
     return matchesDate && matchesReference
+  })
+
+  // 2. Ordenar los planes filtrados
+  const sortedPlans = [...filteredPlans].sort((a, b) => {
+    if (!sortColumn) return 0 // No sorting if no column is selected
+
+    let valA: any
+    let valB: any
+
+    switch (sortColumn) {
+      case "planned_date":
+      case "created_at":
+        // Use the same local midnight date creation for consistent sorting of dates
+        valA = createLocalMidnightDate(a[sortColumn])?.getTime() || 0
+        valB = createLocalMidnightDate(b[sortColumn])?.getTime() || 0
+        break
+      case "material_code":
+        valA = a.material?.material_code || ""
+        valB = b.material?.material_code || ""
+        break
+      case "material_name": // Corresponde a "Referencia" en la tabla
+        valA = a.material?.material_name || ""
+        valB = b.material?.material_name || ""
+        break
+      case "planned_quantity":
+        valA = a.planned_quantity
+        valB = b.planned_quantity
+        break
+      default:
+        return 0
+    }
+
+    if (typeof valA === "string" && typeof valB === "string") {
+      return sortDirection === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA)
+    } else {
+      // For numbers and dates (timestamps)
+      if (valA < valB) {
+        return sortDirection === "asc" ? -1 : 1
+      }
+      if (valA > valB) {
+        return sortDirection === "asc" ? 1 : -1
+      }
+      return 0
+    }
   })
 
   if (loading) {
@@ -141,23 +222,78 @@ export default function ProductionPlanTable({
             <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                    Código Material
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("material_code")}
+                  >
+                    <div className="flex items-center">
+                      Código Material
+                      {sortColumn === "material_code" &&
+                        (sortDirection === "asc" ? (
+                          <ArrowUp className="ml-1 h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="ml-1 h-3 w-3" />
+                        ))}
+                    </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                    Referencia
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("material_name")}
+                  >
+                    <div className="flex items-center">
+                      Referencia
+                      {sortColumn === "material_name" &&
+                        (sortDirection === "asc" ? (
+                          <ArrowUp className="ml-1 h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="ml-1 h-3 w-3" />
+                        ))}
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                     Unidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                    Cantidad a Producir
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("planned_quantity")}
+                  >
+                    <div className="flex items-center">
+                      Cantidad a Producir
+                      {sortColumn === "planned_quantity" &&
+                        (sortDirection === "asc" ? (
+                          <ArrowUp className="ml-1 h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="ml-1 h-3 w-3" />
+                        ))}
+                    </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                    Fecha Requerida
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("planned_date")}
+                  >
+                    <div className="flex items-center">
+                      Fecha Requerida
+                      {sortColumn === "planned_date" &&
+                        (sortDirection === "asc" ? (
+                          <ArrowUp className="ml-1 h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="ml-1 h-3 w-3" />
+                        ))}
+                    </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                    Fecha Creación
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort("created_at")}
+                  >
+                    <div className="flex items-center">
+                      Fecha Creación
+                      {sortColumn === "created_at" &&
+                        (sortDirection === "asc" ? (
+                          <ArrowUp className="ml-1 h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="ml-1 h-3 w-3" />
+                        ))}
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Acciones
@@ -165,14 +301,14 @@ export default function ProductionPlanTable({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredPlans.length === 0 ? (
+                {sortedPlans.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center py-8 text-gray-500 border-t border-gray-200">
                       No hay planes de producción registrados o que coincidan con los filtros.
                     </td>
                   </tr>
                 ) : (
-                  filteredPlans.map((plan) => (
+                  sortedPlans.map((plan) => (
                     <tr key={plan.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">
                         {plan.material?.material_code || "N/A"}
