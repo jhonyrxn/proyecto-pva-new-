@@ -1,192 +1,224 @@
 "use client"
 
+import { Badge } from "@/components/ui/badge"
+
 import type React from "react"
-import { useState, useEffect } from "react"
+
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, Recycle, Loader2 } from "lucide-react"
+import { Plus, Loader2 } from "lucide-react"
 import { finishedProductTransferService, type Material, type Labeler, type ProducedItem } from "@/lib/supabase"
 
 interface GenerateProductionTransferProps {
   materials: Material[]
   labelers: Labeler[]
-  onTransferGenerated: () => void
+  onTransferSuccess: () => void
 }
 
 export default function GenerateProductionTransfer({
   materials,
   labelers,
-  onTransferGenerated,
+  onTransferSuccess,
 }: GenerateProductionTransferProps) {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  // Form states
-  const [selectedMaterialId, setSelectedMaterialId] = useState("")
-  const [quantity, setQuantity] = useState("")
-  const [numBoxes, setNumBoxes] = useState("")
-  const [transferEmployeeId, setTransferEmployeeId] = useState("")
-  const [transferDate, setTransferDate] = useState(
-    new Date().toISOString().split("T")[0] + "T" + new Date().toTimeString().split(" ")[0].substring(0, 5),
-  )
-  const [observations, setObservations] = useState("")
-  const [byproductsTransferred, setByproductsTransferred] = useState<ProducedItem[]>([])
-  const [newByproduct, setNewByproduct] = useState({
+  const [transferData, setTransferData] = useState({
     material_id: "",
     quantity: "",
+    num_boxes: "",
+    transfer_employee_id: "",
+    transfer_date: new Date().toISOString().split("T")[0],
+    observations: "",
+    byproducts_transferred: [] as ProducedItem[],
+    newByproduct: { material_id: "", quantity: "" },
   })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  useEffect(() => {
-    // No need to load data here, it's passed as props
-    setLoading(false)
-  }, [])
+  const finishedProducts = materials.filter((m) => m.type === "Producto Terminado")
+  const byproductsList = materials.filter((m) => m.type === "Subproducto")
 
   const getMaterialById = (id: string): Material | undefined => {
     return materials.find((m) => m.id === id)
   }
 
-  const addByproduct = () => {
-    if (!newByproduct.material_id || !newByproduct.quantity) return
-
-    const material = getMaterialById(newByproduct.material_id)
-    if (!material) return
-
-    const byproductItem: ProducedItem = {
-      material_id: material.id,
-      material_code: material.material_code,
-      material_name: material.material_name,
-      unit: material.unit,
-      quantity: Number.parseFloat(newByproduct.quantity),
+  const handleAddByproduct = () => {
+    if (!transferData.newByproduct.material_id || !transferData.newByproduct.quantity) {
+      alert("Por favor, selecciona un subproducto y especifica una cantidad.")
+      return
     }
 
-    setByproductsTransferred((prev) => [...prev, byproductItem])
-    setNewByproduct({ material_id: "", quantity: "" })
+    const byproductMaterial = getMaterialById(transferData.newByproduct.material_id)
+    if (!byproductMaterial) return
+
+    const newByproductItem: ProducedItem = {
+      material_id: byproductMaterial.id,
+      material_code: byproductMaterial.material_code,
+      material_name: byproductMaterial.material_name,
+      unit: byproductMaterial.unit,
+      quantity: Number.parseFloat(transferData.newByproduct.quantity),
+    }
+
+    setTransferData((prev) => ({
+      ...prev,
+      byproducts_transferred: [...prev.byproducts_transferred, newByproductItem],
+      newByproduct: { material_id: "", quantity: "" }, // Reset new byproduct fields
+    }))
   }
 
-  const removeByproduct = (index: number) => {
-    setByproductsTransferred((prev) => prev.filter((_, i) => i !== index))
+  const handleRemoveByproduct = (index: number) => {
+    setTransferData((prev) => ({
+      ...prev,
+      byproducts_transferred: prev.byproducts_transferred.filter((_, i) => i !== index),
+    }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
 
-    if (!selectedMaterialId || !quantity || !transferEmployeeId || !transferDate) {
-      setError("Por favor, completa todos los campos obligatorios (Producto, Cantidad, Responsable, Fecha).")
+    if (
+      !transferData.material_id ||
+      !transferData.quantity ||
+      !transferData.transfer_employee_id ||
+      !transferData.transfer_date
+    ) {
+      setError("Por favor, completa todos los campos obligatorios (Producto, Cantidad, Empleado, Fecha).")
+      setLoading(false)
       return
     }
 
-    setIsSubmitting(true)
-    setError(null)
+    const material = getMaterialById(transferData.material_id)
+    if (!material) {
+      setError("Producto seleccionado no válido.")
+      setLoading(false)
+      return
+    }
 
     try {
-      const transferData = {
-        material_id: selectedMaterialId,
-        quantity: Number.parseFloat(quantity),
-        num_boxes: numBoxes ? Number.parseInt(numBoxes) : null,
-        transfer_employee_id: transferEmployeeId,
-        transfer_date: transferDate,
-        status: "PENDIENTE" as const, // Initial status for new transfers
-        observations: observations,
-        byproducts_transferred: byproductsTransferred,
+      const newTransfer = {
+        material_id: transferData.material_id,
+        quantity: Number.parseFloat(transferData.quantity),
+        num_boxes: transferData.num_boxes ? Number.parseInt(transferData.num_boxes) : null,
+        transfer_employee_id: transferData.transfer_employee_id,
+        transfer_date: transferData.transfer_date,
+        observations: transferData.observations,
+        status: "PENDIENTE",
+        type: material.type, // 'Producto Terminado' or 'Subproducto'
+        byproducts_transferred: transferData.byproducts_transferred,
       }
 
-      await finishedProductTransferService.create(transferData)
-      alert("Traslado de producción generado exitosamente.")
-      onTransferGenerated() // Notify parent to refresh data
-      // Reset form
-      setSelectedMaterialId("")
-      setQuantity("")
-      setNumBoxes("")
-      setTransferEmployeeId("")
-      setTransferDate(
-        new Date().toISOString().split("T")[0] + "T" + new Date().toTimeString().split(" ")[0].substring(0, 5),
-      )
-      setObservations("")
-      setByproductsTransferred([])
-      setNewByproduct({ material_id: "", quantity: "" })
+      await finishedProductTransferService.create(newTransfer)
+      setSuccess("Traslado de producción generado exitosamente.")
+      setTransferData({
+        material_id: "",
+        quantity: "",
+        num_boxes: "",
+        transfer_employee_id: "",
+        transfer_date: new Date().toISOString().split("T")[0],
+        observations: "",
+        byproducts_transferred: [],
+        newByproduct: { material_id: "", quantity: "" },
+      })
+      onTransferSuccess() // Notify parent to refresh data
     } catch (err) {
-      setError(`Error al generar traslado: ${(err as Error).message}`)
+      setError(err instanceof Error ? err.message : "Error al generar el traslado de producción.")
+      console.error("Error generating production transfer:", err)
     } finally {
-      setIsSubmitting(false)
+      setLoading(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-6 text-center">
-        <Loader2 className="h-6 w-6 animate-spin inline-block mr-2" />
-        Cargando datos...
-      </div>
-    )
-  }
-
-  const finishedProducts = materials.filter((m) => m.type === "Producto Terminado")
-  const byproductMaterials = materials.filter((m) => m.type === "Subproducto")
-
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Generar Nuevo Traslado de Producción</h2>
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-            <strong className="font-bold">Error:</strong>
-            <span className="block sm:inline"> {error}</span>
-          </div>
-        )}
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Plus className="h-5 w-5 text-blue-600" />
+          Generar Nuevo Traslado de Producción
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+              <strong className="font-bold">Error:</strong>
+              <span className="block sm:inline"> {error}</span>
+            </div>
+          )}
+          {success && (
+            <div
+              className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative"
+              role="alert"
+            >
+              <strong className="font-bold">Éxito:</strong>
+              <span className="block sm:inline"> {success}</span>
+            </div>
+          )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Detalles del Producto y Traslado</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="product-reference">Producto Terminado</Label>
-              <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId} required>
-                <SelectTrigger id="product-reference">
-                  <SelectValue placeholder="Selecciona producto" />
+              <Label htmlFor="material_id">Producto Terminado / Subproducto</Label>
+              <Select
+                value={transferData.material_id}
+                onValueChange={(value) => setTransferData({ ...transferData, material_id: value })}
+              >
+                <SelectTrigger id="material_id">
+                  <SelectValue placeholder="Selecciona un producto" />
                 </SelectTrigger>
                 <SelectContent>
-                  {finishedProducts.map((material) => (
-                    <SelectItem key={material.id} value={material.id}>
-                      {material.material_code} - {material.material_name} ({material.unit})
-                    </SelectItem>
-                  ))}
+                  <optgroup label="Productos Terminados">
+                    {finishedProducts.map((material) => (
+                      <SelectItem key={material.id} value={material.id}>
+                        {material.material_code} - {material.material_name}
+                      </SelectItem>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Subproductos">
+                    {byproductsList.map((material) => (
+                      <SelectItem key={material.id} value={material.id}>
+                        {material.material_code} - {material.material_name}
+                      </SelectItem>
+                    ))}
+                  </optgroup>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label htmlFor="quantity">Cantidad Producida</Label>
+              <Label htmlFor="quantity">Cantidad</Label>
               <Input
                 id="quantity"
                 type="number"
                 step="0.01"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                placeholder="Ej: 100.5"
+                value={transferData.quantity}
+                onChange={(e) => setTransferData({ ...transferData, quantity: e.target.value })}
+                placeholder="Cantidad a trasladar"
                 required
               />
             </div>
             <div>
-              <Label htmlFor="num-boxes">Cantidad de Cajas</Label>
+              <Label htmlFor="num_boxes">Número de Cajas (Opcional)</Label>
               <Input
-                id="num-boxes"
+                id="num_boxes"
                 type="number"
                 step="1"
-                value={numBoxes}
-                onChange={(e) => setNumBoxes(e.target.value)}
-                placeholder="Ej: 10"
+                value={transferData.num_boxes}
+                onChange={(e) => setTransferData({ ...transferData, num_boxes: e.target.value })}
+                placeholder="Número de cajas"
               />
             </div>
             <div>
-              <Label htmlFor="transfer-employee">Responsable del Traslado</Label>
-              <Select value={transferEmployeeId} onValueChange={setTransferEmployeeId} required>
-                <SelectTrigger id="transfer-employee">
+              <Label htmlFor="transfer_employee_id">Empleado que Traslada</Label>
+              <Select
+                value={transferData.transfer_employee_id}
+                onValueChange={(value) => setTransferData({ ...transferData, transfer_employee_id: value })}
+              >
+                <SelectTrigger id="transfer_employee_id">
                   <SelectValue placeholder="Selecciona empleado" />
                 </SelectTrigger>
                 <SelectContent>
@@ -198,48 +230,35 @@ export default function GenerateProductionTransfer({
                 </SelectContent>
               </Select>
             </div>
-            <div className="md:col-span-2">
-              <Label htmlFor="transfer-date">Fecha y Hora del Traslado</Label>
+            <div>
+              <Label htmlFor="transfer_date">Fecha de Traslado</Label>
               <Input
-                id="transfer-date"
-                type="datetime-local"
-                value={transferDate}
-                onChange={(e) => setTransferDate(e.target.value)}
+                id="transfer_date"
+                type="date"
+                value={transferData.transfer_date}
+                onChange={(e) => setTransferData({ ...transferData, transfer_date: e.target.value })}
                 required
               />
             </div>
-            <div className="md:col-span-2">
-              <Label htmlFor="observations">Observaciones</Label>
-              <Textarea
-                id="observations"
-                value={observations}
-                onChange={(e) => setObservations(e.target.value)}
-                placeholder="Añade cualquier observación relevante sobre el traslado."
-                rows={3}
-              />
-            </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Subproductos Asociados */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Recycle className="h-5 w-5" />
-              Subproductos Asociados
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Subproductos Generados (Opcional)</Label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Select
-                value={newByproduct.material_id}
-                onValueChange={(value) => setNewByproduct((prev) => ({ ...prev, material_id: value }))}
+                value={transferData.newByproduct.material_id}
+                onValueChange={(value) =>
+                  setTransferData((prev) => ({
+                    ...prev,
+                    newByproduct: { ...prev.newByproduct, material_id: value },
+                  }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona subproducto" />
                 </SelectTrigger>
                 <SelectContent>
-                  {byproductMaterials.map((material) => (
+                  {byproductsList.map((material) => (
                     <SelectItem key={material.id} value={material.id}>
                       {material.material_code} - {material.material_name}
                     </SelectItem>
@@ -250,18 +269,25 @@ export default function GenerateProductionTransfer({
                 type="number"
                 step="0.01"
                 placeholder="Cantidad"
-                value={newByproduct.quantity}
-                onChange={(e) => setNewByproduct((prev) => ({ ...prev, quantity: e.target.value }))}
+                value={transferData.newByproduct.quantity}
+                onChange={(e) =>
+                  setTransferData((prev) => ({
+                    ...prev,
+                    newByproduct: { ...prev.newByproduct, quantity: e.target.value },
+                  }))
+                }
               />
-              <Button type="button" onClick={addByproduct}>
+              <Button type="button" onClick={handleAddByproduct}>
                 <Plus className="h-4 w-4 mr-2" />
-                Agregar
+                Agregar Subproducto
               </Button>
             </div>
-
             <div className="space-y-2">
-              {byproductsTransferred.map((item, index) => (
-                <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded">
+              {transferData.byproducts_transferred.length === 0 && (
+                <p className="text-gray-500 text-center py-2 text-sm">No hay subproductos agregados.</p>
+              )}
+              {transferData.byproducts_transferred.map((item, index) => (
+                <div key={index} className="flex items-center justify-between bg-gray-100 p-2 rounded text-sm">
                   <div>
                     <Badge variant="secondary" className="mr-2">
                       {item.material_code}
@@ -275,33 +301,38 @@ export default function GenerateProductionTransfer({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => removeByproduct(index)}
+                    onClick={() => handleRemoveByproduct(index)}
                     className="text-red-600"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    Eliminar
                   </Button>
                 </div>
               ))}
-              {byproductsTransferred.length === 0 && (
-                <p className="text-gray-500 text-center py-4">No hay subproductos asociados</p>
-              )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <div className="flex justify-end gap-4">
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
-            {isSubmitting ? (
+          <div>
+            <Label htmlFor="observations">Observaciones (Opcional)</Label>
+            <Textarea
+              id="observations"
+              value={transferData.observations}
+              onChange={(e) => setTransferData({ ...transferData, observations: e.target.value })}
+              placeholder="Añade cualquier observación sobre el traslado"
+              rows={2}
+            />
+          </div>
+
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Generando Traslado...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generando Traslado...
               </>
             ) : (
               "Generar Traslado de Producción"
             )}
           </Button>
-        </div>
-      </form>
-    </div>
+        </form>
+      </CardContent>
+    </Card>
   )
 }
