@@ -4,23 +4,27 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import type { ProductionPlan, Material } from "@/lib/supabase"
+import type { ProductionPlan, Material, Labeler } from "@/lib/supabase" // Asegúrate de importar Labeler
 import { Loader2, Calendar, Trash2, Filter, ArrowUp, ArrowDown } from "lucide-react" // Importar iconos de ordenamiento
 
 interface ProductionPlanTableProps {
   productionPlans: ProductionPlan[]
   materials: Material[]
+  labelers: Labeler[] // Añadir labelers a las props
   adminKey: string
   loading: boolean
   onDeletePlan: (id: string) => Promise<void>
+  onDataUpdate: () => void // Añadir para recargar datos si es necesario
 }
 
 export default function ProductionPlanTable({
   productionPlans,
   materials,
+  labelers, // Recibir labelers
   adminKey,
   loading,
   onDeletePlan,
+  onDataUpdate,
 }: ProductionPlanTableProps) {
   const [error, setError] = useState<string | null>(null)
   const [filterStartDate, setFilterStartDate] = useState("")
@@ -41,6 +45,7 @@ export default function ProductionPlanTable({
     try {
       await onDeletePlan(id) // Call the parent's delete function
       alert("Plan de producción eliminado exitosamente.")
+      onDataUpdate() // Recargar datos después de eliminar
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al eliminar plan de producción")
     }
