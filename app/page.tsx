@@ -33,7 +33,7 @@ import {
 import {
   materialService,
   orderService,
-  productionPlaceService, // <-- Asegúrate de que esté importado aquí
+  productionPlaceService,
   labelerService,
   rawMaterialTransferService,
   finishedProductTransferService,
@@ -217,7 +217,7 @@ export default function PVAProduction() {
 
       const materialsDataPromise = materialService.getAll()
       const ordersDataPromise = orderService.getAll()
-      const productionPlacesDataPromise = productionPlaceService.getAll() // <-- Asegúrate de que se llama aquí
+      const productionPlacesDataPromise = productionPlaceService.getAll()
       const labelersDataPromise = labelerService.getAll()
       const rawMaterialTransfersPromise = rawMaterialTransferService.getAll()
       const finishedProductTransfersPromise = finishedProductTransferService.getAll()
@@ -236,7 +236,7 @@ export default function PVAProduction() {
           ([
             materialsData,
             ordersData,
-            placesData, // <-- Asegúrate de que se recibe aquí
+            placesData,
             labelersData,
             rawTransfersData,
             finishedTransfersData,
@@ -244,7 +244,7 @@ export default function PVAProduction() {
           ]) => {
             setMaterials(materialsData)
             setOrders(ordersData)
-            setProductionPlaces(placesData) // <-- Asegúrate de que se guarda en el estado
+            setProductionPlaces(placesData)
             setLabelers(labelersData)
             setRawMaterialTransfers(rawTransfersData)
             setFinishedProductTransfers(finishedTransfersData)
