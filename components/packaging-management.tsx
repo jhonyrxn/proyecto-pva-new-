@@ -9,14 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   finishedProductTransferService,
-  materialService, // Import materialService to filter packaging materials
+  materialService,
   type FinishedProductTransfer,
   type Labeler,
   type Material,
   type ProducedItem,
 } from "@/lib/supabase"
-import { Loader2, CheckCircle, XCircle, Warehouse, Trash2, Plus } from 'lucide-react'
-import { Package, Recycle, Archive } from 'lucide-react' // Declare the missing variables
+import { Loader2, CheckCircle, XCircle, Warehouse, Trash2, Plus } from "lucide-react"
+import { Package, Recycle, Archive } from "lucide-react"
 
 interface PackagingManagementProps {
   materials: Material[]
@@ -30,15 +30,6 @@ export default function PackagingManagement({ materials, labelers, adminKey }: P
   const [error, setError] = useState<string | null>(null)
   const [packagingMaterialsList, setPackagingMaterialsList] = useState<Material[]>([])
 
-  // Estados para el formulario de traslado de producto terminado (Generación)
-  const [newFinishedProductTransfer, setNewFinishedProductTransfer] = useState({
-    material_id: "",
-    quantity: "",
-    transfer_employee_id: "",
-    transfer_date: new Date().toISOString().split("T")[0],
-  })
-
-  // Estados para la recepción y materiales de empaque
   const [currentReceptionData, setCurrentReceptionData] = useState<{
     [key: string]: {
       receivedQuantity: number
@@ -54,18 +45,15 @@ export default function PackagingManagement({ materials, labelers, adminKey }: P
       setLoading(true)
       setError(null)
       const transfersData = await finishedProductTransferService.getAll()
-      // Filter for transfers that are PENDING and are either Finished Product or Byproduct
       const pendingTransfers = transfersData.filter(
         (t) =>
           t.status === "PENDIENTE" && (t.material?.type === "Producto Terminado" || t.material?.type === "Subproducto"),
       )
       setFinishedProductTransfers(pendingTransfers)
 
-      // Load packaging materials
       const packagingMaterials = await materialService.getByType("Material de Empaque")
       setPackagingMaterialsList(packagingMaterials)
 
-      // Initialize reception data for each pending transfer
       const initialReceptionData: {
         [key: string]: {
           receivedQuantity: number
@@ -150,9 +138,9 @@ export default function PackagingManagement({ materials, labelers, adminKey }: P
         received_employee_id: data.receivedEmployeeId,
         received_at: new Date().toISOString(),
         observations: data.observations,
-        packaging_materials_used: data.packagingMaterialsUsed, // Save packaging materials
+        packaging_materials_used: data.packagingMaterialsUsed,
       })
-      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== transferId)) // Remove from pending list
+      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== transferId))
       alert("Producto recibido en Empaque exitosamente.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al recibir producto en Empaque")
@@ -163,7 +151,7 @@ export default function PackagingManagement({ materials, labelers, adminKey }: P
     if (!confirm("¿Estás seguro de rechazar este traslado de producto?")) return
     try {
       const updatedTransfer = await finishedProductTransferService.update(transferId, { status: "RECHAZADO" })
-      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== transferId)) // Remove from pending list
+      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== transferId))
       alert("Traslado de producto rechazado.")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al rechazar producto")
