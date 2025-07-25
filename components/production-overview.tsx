@@ -1,57 +1,87 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2 } from 'lucide-react'
-import type { ProductionOrder, Labeler, Material } from "@/lib/supabase"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Package, Factory, ScrollText, Truck } from "lucide-react"
+import type { Material, Labeler, ProductionOrder } from "@/lib/supabase"
+import CreateOrderDialog from "@/components/create-order-dialog"
+import ProductionOrderForm from "@/components/production-order-form"
+import RawMaterialReception from "@/components/raw-material-reception"
 import GenerateProductionTransfer from "@/components/generate-production-transfer" // Import the new component
-import type { JSX } from "react/jsx-runtime"
 
 interface ProductionOverviewProps {
-  orders: ProductionOrder[]
+  materials: Material[]
   labelers: Labeler[]
-  materials: Material[] // Pass materials to the new component
-  onOrderUpdated: () => void // Callback to refresh data in parent
+  productionOrders: ProductionOrder[]
+  onDataUpdate: () => void
   adminKey: string
-  productionOrderStatus: { [key: string]: string } // Pass the status enum
-  getStatusBadge: (status: string) => JSX.Element // Pass the badge function
-  getStatusIcon: (status: string) => JSX.Element // Pass the icon function
 }
 
 export default function ProductionOverview({
-  orders,
+  materials,
   labelers,
-  materials, // Destructure materials
-  onOrderUpdated,
-  productionOrderStatus,
-  getStatusBadge,
-  getStatusIcon,
+  productionOrders,
+  onDataUpdate,
+  adminKey,
 }: ProductionOverviewProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        <p className="ml-2 text-gray-600">Cargando gestión de producción...</p>
-      </div>
-    )
-  }
+  const [activeTab, setActiveTab] = useState("generate-transfer") // Default to generate-transfer
 
   return (
     <div className="space-y-6">
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">Error:</strong>
-          <span className="block sm:inline"> {error}</span>
-        </div>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Factory className="h-5 w-5 text-indigo-600" />
+            Gestión de Producción
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 md:grid-cols-3">
+              <TabsTrigger value="generate-transfer" className="flex items-center gap-2">
+                <Truck className="h-4 w-4" /> Generar Traslado
+              </TabsTrigger>
+              <TabsTrigger value="raw-material-reception" className="flex items-center gap-2">
+                <Package className="h-4 w-4" /> Recepción Materia Prima
+              </TabsTrigger>
+              <TabsTrigger value="production-orders-management" className="flex items-center gap-2">
+                <ScrollText className="h-4 w-4" /> Órdenes de Producción
+              </TabsTrigger>
+            </TabsList>
 
-      {/* Nuevo componente para generar traslados de producción desde cero */}
-      <GenerateProductionTransfer materials={materials} labelers={labelers} onTransferGenerated={onOrderUpdated} />
+            <TabsContent value="generate-transfer" className="mt-6">
+              <GenerateProductionTransfer materials={materials} labelers={labelers} onTransferSuccess={onDataUpdate} />
+            </TabsContent>
 
-      {/* Puedes añadir aquí otras secciones relacionadas con la gestión de producción si es necesario,
-          como un historial de traslados generados desde esta sección, etc. */}
+            <TabsContent value="raw-material-reception" className="mt-6">
+              <RawMaterialReception
+                materials={materials}
+                labelers={labelers}
+                adminKey={adminKey}
+                onDataUpdate={onDataUpdate}
+              />
+            </TabsContent>
+
+            <TabsContent value="production-orders-management" className="mt-6">
+              <div className="flex justify-end mb-4">
+                <CreateOrderDialog
+                  materials={materials.filter((m) => m.type === "Producto Terminado" || m.type === "Subproducto")}
+                  labelers={labelers}
+                  onOrderCreated={onDataUpdate}
+                />
+              </div>
+              <ProductionOrderForm
+                productionOrders={productionOrders}
+                materials={materials}
+                labelers={labelers}
+                onDataUpdate={onDataUpdate}
+                adminKey={adminKey}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
   )
 }
