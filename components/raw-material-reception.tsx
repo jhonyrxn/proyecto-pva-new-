@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,89 +9,72 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, CheckCircle, XCircle, Truck, Clock, Trash2 } from "lucide-react"
-import type { RawMaterialTransfer, Material, Labeler } from "@/lib/supabase"
+import { Trash2, Truck, CheckCircle, XCircle, Loader2, Clock } from "lucide-react"
+import type { Material, Labeler, RawMaterialTransfer } from "@/lib/supabase"
 
-interface RawMaterialReceptionProps {
-  rawMaterialTransfers: RawMaterialTransfer[]
+interface RawMaterialManagementProps {
   materials: Material[]
   labelers: Labeler[]
   adminKey: string
-  onReceiveRawMaterial: (transferId: string, receivedQuantity: number, receivedEmployeeId: string) => Promise<void>
-  onRejectRawMaterial: (transferId: string) => Promise<void>
+  rawMaterialTransfers: RawMaterialTransfer[]
+  onCreateRawMaterialTransfer: (data: {
+    material_id: string
+    quantity: number
+    transfer_employee_id: string
+    transfer_date: string
+  }) => Promise<void>
   onDeleteRawMaterialTransfer: (id: string) => Promise<void>
 }
 
-export default function RawMaterialReception({
-  rawMaterialTransfers,
+export default function RawMaterialManagement({
   materials,
   labelers,
   adminKey,
-  onReceiveRawMaterial,
-  onRejectRawMaterial,
+  rawMaterialTransfers,
+  onCreateRawMaterialTransfer,
   onDeleteRawMaterialTransfer,
-}: RawMaterialReceptionProps) {
+}: RawMaterialManagementProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Estados para la recepción de un traslado específico
-  const [receivingTransferId, setReceivingTransferId] = useState<string | null>(null)
-  const [receivedQuantity, setReceivedQuantity] = useState<number | null>(null)
-  const [receivedEmployeeId, setReceivedEmployeeId] = useState<string>("")
+  // Estados del formulario de traslado
+  const [transferDate, setTransferDate] = useState(new Date().toISOString().split("T")[0])
+  const [transferEmployeeId, setTransferEmployeeId] = useState("")
+  const [selectedMaterialId, setSelectedMaterialId] = useState("")
+  const [quantity, setQuantity] = useState("")
 
-  const pendingTransfers = rawMaterialTransfers.filter((t) => t.status === "PENDIENTE")
+  const rawMaterials = materials.filter((m) => m.type === "Materia Prima")
 
-  const handleReceive = async () => {
-    if (!receivingTransferId) return
-    if (!receivedEmployeeId) {
-      alert("Por favor, selecciona el empleado que recibe.")
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!selectedMaterialId || !quantity || !transferEmployeeId || !transferDate) {
+      alert("Por favor, completa todos los campos obligatorios.")
       return
     }
-    if (receivedQuantity === null || receivedQuantity <= 0) {
-      alert("La cantidad recibida debe ser mayor que cero.")
-      return
-    }
 
     try {
       setLoading(true)
-      await onReceiveRawMaterial(receivingTransferId, receivedQuantity, receivedEmployeeId)
-      resetReceptionForm()
+      await onCreateRawMaterialTransfer({
+        material_id: selectedMaterialId,
+        quantity: Number.parseFloat(quantity),
+        transfer_employee_id: transferEmployeeId,
+        transfer_date: transferDate,
+      })
+      resetForm()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al recibir materia prima.")
-      console.error("Error receiving raw material:", err)
+      setError(err instanceof Error ? err.message : "Error al registrar el traslado.")
+      console.error("Error creating raw material transfer:", err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleReject = async (transferId: string) => {
-    try {
-      setLoading(true)
-      await onRejectRawMaterial(transferId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al rechazar materia prima.")
-      console.error("Error rejecting raw material:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDelete = async (transferId: string) => {
-    try {
-      setLoading(true)
-      await onDeleteRawMaterialTransfer(transferId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al eliminar traslado de materia prima.")
-      console.error("Error deleting raw material transfer:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const resetReceptionForm = () => {
-    setReceivingTransferId(null)
-    setReceivedQuantity(null)
-    setReceivedEmployeeId("")
+  const resetForm = () => {
+    setTransferDate(new Date().toISOString().split("T")[0])
+    setTransferEmployeeId("")
+    setSelectedMaterialId("")
+    setQuantity("")
   }
 
   const getStatusBadge = (status: string) => {
@@ -136,7 +121,83 @@ export default function RawMaterialReception({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Truck className="h-5 w-5 text-blue-600" />
-            Recepción de Materia Prima (Pendiente)
+            Registrar Nuevo Traslado de Materia Prima
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="transfer_date">Fecha de Traslado</Label>
+                <Input
+                  id="transfer_date"
+                  type="date"
+                  value={transferDate}
+                  onChange={(e) => setTransferDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="material">Materia Prima</Label>
+                <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona materia prima" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rawMaterials.map((material) => (
+                      <SelectItem key={material.id} value={material.id}>
+                        {material.material_code} - {material.material_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="quantity">Cantidad</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  step="0.01"
+                  placeholder="Cantidad a trasladar"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="transfer_employee">Empleado que Traslada</Label>
+              <Select value={transferEmployeeId} onValueChange={setTransferEmployeeId} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona empleado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {labelers.map((labeler) => (
+                    <SelectItem key={labeler.id} value={labeler.id}>
+                      {labeler.name} - {labeler.cedula}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-4">
+              <Button type="button" onClick={resetForm} variant="outline">
+                Limpiar
+              </Button>
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Registrar Traslado
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Truck className="h-5 w-5 text-gray-600" />
+            Historial de Traslados de Materia Prima
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -160,19 +221,28 @@ export default function RawMaterialReception({
                     Estado
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cantidad Recibida
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Empleado Recibe
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Fecha Recibido
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Acciones
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {pendingTransfers.length === 0 ? (
+                {rawMaterialTransfers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-gray-500">
-                      No hay traslados de materia prima pendientes de recepción.
+                    <td colSpan={9} className="text-center py-8 text-gray-500">
+                      No hay traslados de materia prima registrados.
                     </td>
                   </tr>
                 ) : (
-                  pendingTransfers.map((transfer) => (
+                  rawMaterialTransfers.map((transfer) => (
                     <tr key={transfer.id}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(transfer.transfer_date).toLocaleDateString("es-ES")}
@@ -192,31 +262,22 @@ export default function RawMaterialReception({
                           {getStatusBadge(transfer.status)}
                         </div>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_quantity ?? "N/A"} {transfer.material?.unit}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_employee?.name ?? "N/A"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {transfer.received_at ? new Date(transfer.received_at).toLocaleDateString("es-ES") : "N/A"}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <Button
-                          onClick={() => {
-                            setReceivingTransferId(transfer.id)
-                            setReceivedQuantity(transfer.quantity) // Sugerir la cantidad trasladada
-                          }}
-                          variant="outline"
-                          size="sm"
-                          className="mr-2"
-                        >
-                          <CheckCircle className="h-4 w-4 mr-1" /> Recibir
-                        </Button>
-                        <Button
-                          onClick={() => handleReject(transfer.id)}
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600 hover:text-red-900 mr-2"
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          onClick={() => handleDelete(transfer.id)}
+                          onClick={() => onDeleteRawMaterialTransfer(transfer.id)}
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-900"
+                          disabled={loading}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -229,60 +290,6 @@ export default function RawMaterialReception({
           </div>
         </CardContent>
       </Card>
-
-      {receivingTransferId && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              Confirmar Recepción de Materia Prima
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Confirmando recepción para el traslado ID:{" "}
-              <span className="font-semibold">{receivingTransferId.substring(0, 8)}...</span>
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="received_quantity">Cantidad Recibida</Label>
-                <Input
-                  id="received_quantity"
-                  type="number"
-                  step="0.01"
-                  value={receivedQuantity ?? ""}
-                  onChange={(e) => setReceivedQuantity(Number(e.target.value))}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="received_employee">Empleado que Recibe</Label>
-                <Select value={receivedEmployeeId} onValueChange={setReceivedEmployeeId} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona empleado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {labelers.map((labeler) => (
-                      <SelectItem key={labeler.id} value={labeler.id}>
-                        {labeler.name} - {labeler.cedula}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-4">
-              <Button onClick={resetReceptionForm} variant="outline">
-                Cancelar
-              </Button>
-              <Button onClick={handleReceive} className="bg-green-600 hover:bg-green-700" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Confirmar Recepción
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
