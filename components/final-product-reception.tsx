@@ -5,17 +5,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { Loader2, CheckCircle, XCircle, Truck, Package, Trash2 } from "lucide-react"
 import {
   finishedProductTransferService,
   type FinishedProductTransfer,
-  type Labeler,
   type Material,
+  type Labeler,
 } from "@/lib/supabase"
-import { Loader2, CheckCircle, XCircle, Warehouse, Trash2 } from "lucide-react"
-import { Package, Recycle } from "lucide-react"
 
 interface FinalProductReceptionProps {
   materials: Material[]
@@ -24,92 +21,90 @@ interface FinalProductReceptionProps {
 }
 
 export default function FinalProductReception({ materials, labelers, adminKey }: FinalProductReceptionProps) {
-  const [finishedProductTransfers, setFinishedProductTransfers] = useState<FinishedProductTransfer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [pendingFinalReceptionTransfers, setPendingFinalReceptionTransfers] = useState<FinishedProductTransfer[]>([])
 
-  const [currentReceptionData, setCurrentReceptionData] = useState<{
-    [key: string]: {
-      receivedQuantity: number
-      receivedEmployeeId: string
-      observations: string
-    }
-  }>({})
+  // Estados para la recepción final de un traslado específico
+  const [receivingTransferId, setReceivingTransferId] = useState<string | null>(null)
+  const [receivedQuantity, setReceivedQuantity] = useState<number | null>(null)
+  const [receivedEmployeeId, setReceivedEmployeeId] = useState<string>("")
+  const [observations, setObservations] = useState<string>("")
 
-  const loadData = useCallback(async () => {
+  const loadPendingFinalReceptionTransfers = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const transfersData = await finishedProductTransferService.getAll()
-      // Filter for transfers that are RECEIVED in Packaging and are either Finished Product or Byproduct
-      const pendingFinalReceptionTransfers = transfersData.filter(
-        (t) =>
-          t.status === "RECIBIDO" && (t.material?.type === "Producto Terminado" || t.material?.type === "Subproducto"),
-      )
-      setFinishedProductTransfers(pendingFinalReceptionTransfers)
-
-      const initialReceptionData: {
-        [key: string]: {
-          receivedQuantity: number
-          receivedEmployeeId: string
-          observations: string
-        }
-      } = {}
-      pendingFinalReceptionTransfers.forEach((transfer) => {
-        initialReceptionData[transfer.id] = {
-          receivedQuantity: transfer.received_quantity || transfer.quantity,
-          receivedEmployeeId: transfer.final_received_employee_id || "",
-          observations: transfer.final_reception_observations || "",
-        }
-      })
-      setCurrentReceptionData(initialReceptionData)
+      const transfers = await finishedProductTransferService.getAll()
+      // Filtra solo los traslados que están en estado "FINALIZADO_BODEGA"
+      const filtered = transfers.filter((t) => t.status === "FINALIZADO_BODEGA")
+      setPendingFinalReceptionTransfers(filtered)
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Error cargando traslados de producto terminado para recepción final",
-      )
+      setError(err instanceof Error ? err.message : "Error cargando traslados pendientes de recepción final.")
+      console.error("Error loading pending final reception transfers:", err)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    loadPendingFinalReceptionTransfers()
+  }, [loadPendingFinalReceptionTransfers])
 
-  const handleFinalReceiveFinishedProduct = async (transferId: string) => {
-    const data = currentReceptionData[transferId]
-    if (!data || !data.receivedEmployeeId || data.receivedQuantity <= 0) {
-      alert("Por favor, selecciona el empleado que recibe y asegura que la cantidad recibida sea mayor que cero.")
+  const handleFinalReceiveTransfer = async () => {
+    if (!receivingTransferId) return
+    if (!receivedEmployeeId) {
+      alert("Por favor, selecciona el empleado que realiza la recepción final.")
+      return
+    }
+    if (receivedQuantity === null || receivedQuantity <= 0) {
+      alert("La cantidad recibida debe ser mayor que cero.")
       return
     }
 
     try {
-      await finishedProductTransferService.update(transferId, {
-        status: "RECIBIDO_FINAL",
-        final_received_quantity: data.receivedQuantity,
-        final_received_employee_id: data.receivedEmployeeId,
-        final_received_at: new Date().toISOString(),
-        final_reception_observations: data.observations,
+      setLoading(true)
+      const updatedTransfer = await finishedProductTransferService.update(receivingTransferId, {
+        status: "RECIBIDO", // Estado final de recepción
+        received_quantity: receivedQuantity,
+        received_employee_id: receivedEmployeeId,
+        received_at: new Date().toISOString(),
+        observations: observations,
       })
-      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== transferId)) // Remove from pending list
-      alert("Producto recibido en Almacén de Producto Terminado exitosamente.")
+      setPendingFinalReceptionTransfers((prev) => prev.map((t) => (t.id === receivingTransferId ? updatedTransfer : t)))
+      alert("Producto terminado/subproducto recibido finalmente en bodega.")
+      resetReceptionForm()
+      loadPendingFinalReceptionTransfers() // Recargar para asegurar que el estado se actualice
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al recibir producto en Almacén de Producto Terminado")
+      setError(err instanceof Error ? err.message : "Error al realizar la recepción final.")
+      console.error("Error performing final reception:", err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleRejectFinishedProduct = async (transferId: string) => {
-    if (!confirm("¿Estás seguro de rechazar este traslado de producto en la recepción final?")) return
+  const handleRejectTransfer = async (transferId: string) => {
+    const enteredKey = prompt("Por favor, introduce la clave de administrador para rechazar este traslado:")
+    if (enteredKey !== adminKey) {
+      alert("Clave incorrecta. No se puede rechazar el traslado.")
+      return
+    }
+    if (!confirm("¿Estás seguro de rechazar este traslado de producto terminado/subproducto?")) return
+
     try {
-      await finishedProductTransferService.update(transferId, { status: "RECHAZADO_FINAL" })
-      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== transferId)) // Remove from pending list
-      alert("Traslado de producto rechazado en recepción final.")
+      setLoading(true)
+      await finishedProductTransferService.update(transferId, { status: "RECHAZADO" })
+      alert("Traslado rechazado.")
+      loadPendingFinalReceptionTransfers()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al rechazar producto en recepción final")
+      setError(err instanceof Error ? err.message : "Error al rechazar el traslado.")
+      console.error("Error rejecting transfer:", err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleDeleteFinishedProductTransfer = async (id: string) => {
+  const handleDeleteTransfer = async (transferId: string) => {
     const enteredKey = prompt("Por favor, introduce la clave de administrador para eliminar este traslado:")
     if (enteredKey !== adminKey) {
       alert("Clave incorrecta. No se puede eliminar el traslado.")
@@ -118,41 +113,30 @@ export default function FinalProductReception({ materials, labelers, adminKey }:
     if (!confirm("¿Estás seguro de eliminar este traslado? Esta acción es irreversible.")) return
 
     try {
-      await finishedProductTransferService.delete(id)
-      setFinishedProductTransfers((prev) => prev.filter((t) => t.id !== id))
+      setLoading(true)
+      await finishedProductTransferService.delete(transferId)
       alert("Traslado eliminado exitosamente.")
+      loadPendingFinalReceptionTransfers()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al eliminar traslado")
+      setError(err instanceof Error ? err.message : "Error al eliminar el traslado.")
+      console.error("Error deleting transfer:", err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    let colorClass = ""
-    switch (status) {
-      case "PENDIENTE":
-        colorClass = "bg-yellow-100 text-yellow-800"
-        break
-      case "RECIBIDO":
-        colorClass = "bg-blue-100 text-blue-800" // Received in Packaging
-        break
-      case "RECIBIDO_FINAL":
-        colorClass = "bg-green-100 text-green-800" // Received in Final Product
-        break
-      case "RECHAZADO":
-      case "RECHAZADO_FINAL":
-        colorClass = "bg-red-100 text-red-800"
-        break
-      default:
-        colorClass = "bg-gray-100 text-gray-800"
-    }
-    return <Badge className={`${colorClass} text-xs`}>{status}</Badge>
+  const resetReceptionForm = () => {
+    setReceivingTransferId(null)
+    setReceivedQuantity(null)
+    setReceivedEmployeeId("")
+    setObservations("")
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        <p className="ml-2 text-gray-600">Cargando recepción final de producto terminado...</p>
+      <div className="flex items-center justify-center min-h-[200px]">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+        <p className="ml-2 text-gray-600">Cargando traslados pendientes de recepción final...</p>
       </div>
     )
   }
@@ -166,203 +150,38 @@ export default function FinalProductReception({ materials, labelers, adminKey }:
         </div>
       )}
 
-      {/* Sección de Recepción Final de Producto Terminado y Subproducto Pendiente */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Warehouse className="h-5 w-5 text-purple-600" />
-            Recepción Final (Almacén Producto Terminado)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {finishedProductTransfers.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">
-              No hay traslados pendientes de recepción final en Almacén de Producto Terminado.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {finishedProductTransfers.map((transfer) => {
-                const data = currentReceptionData[transfer.id] || {
-                  receivedQuantity: transfer.final_received_quantity || transfer.received_quantity || transfer.quantity,
-                  receivedEmployeeId: transfer.final_received_employee_id || "",
-                  observations: transfer.final_reception_observations || "",
-                }
-                return (
-                  <div key={transfer.id} className="border p-4 rounded-lg shadow-sm bg-gray-50">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="font-semibold text-lg flex items-center gap-2">
-                        {transfer.material?.type === "Producto Terminado" ? (
-                          <Package className="h-5 w-5 text-green-600" />
-                        ) : (
-                          <Recycle className="h-5 w-5 text-orange-600" />
-                        )}
-                        {transfer.material?.material_name} ({transfer.material?.material_code})
-                      </h3>
-                      {getStatusBadge(transfer.status)}
-                    </div>
-                    <p className="text-sm text-gray-600">
-                      Cantidad Trasladada: {transfer.quantity} {transfer.material?.unit}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Cantidad Recibida en Empaque: {transfer.received_quantity} {transfer.material?.unit}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Trasladado por: {transfer.transfer_employee?.name} ({transfer.transfer_employee?.cedula})
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Recibido en Empaque por: {transfer.received_employee?.name} ({transfer.received_employee?.cedula})
-                    </p>
-                    <p className="text-sm text-gray-600 mb-4">
-                      Fecha de Traslado: {new Date(transfer.transfer_date).toLocaleString()}
-                    </p>
-                    {transfer.received_at && (
-                      <p className="text-sm text-gray-600 mb-4">
-                        Fecha Recibido Empaque: {new Date(transfer.received_at).toLocaleString()}
-                      </p>
-                    )}
-                    {transfer.packaging_materials_used && transfer.packaging_materials_used.length > 0 && (
-                      <p className="text-sm text-gray-600 mb-4">
-                        Empaque Usado:{" "}
-                        {transfer.packaging_materials_used.map((p) => `${p.material_code} (${p.quantity})`).join(", ")}
-                      </p>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                      <div>
-                        <Label htmlFor={`final-received-quantity-${transfer.id}`}>Cantidad Recibida (Final)</Label>
-                        <Input
-                          id={`final-received-quantity-${transfer.id}`}
-                          type="number"
-                          step="0.01"
-                          defaultValue={data.receivedQuantity}
-                          onChange={(e) =>
-                            setCurrentReceptionData((prev) => ({
-                              ...prev,
-                              [transfer.id]: {
-                                ...prev[transfer.id],
-                                receivedQuantity: Number.parseFloat(e.target.value),
-                              },
-                            }))
-                          }
-                          placeholder="Cantidad real recibida"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`final-received-employee-${transfer.id}`}>Empleado que Recibe (Final)</Label>
-                        <Select
-                          value={data.receivedEmployeeId}
-                          onValueChange={(value) =>
-                            setCurrentReceptionData((prev) => ({
-                              ...prev,
-                              [transfer.id]: { ...prev[transfer.id], receivedEmployeeId: value },
-                            }))
-                          }
-                        >
-                          <SelectTrigger id={`final-received-employee-${transfer.id}`}>
-                            <SelectValue placeholder="Selecciona empleado" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {labelers.map((labeler) => (
-                              <SelectItem key={labeler.id} value={labeler.id}>
-                                {labeler.name} ({labeler.cedula})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor={`final-observations-${transfer.id}`}>Observaciones (Final)</Label>
-                        <Textarea
-                          id={`final-observations-${transfer.id}`}
-                          defaultValue={data.observations}
-                          onChange={(e) =>
-                            setCurrentReceptionData((prev) => ({
-                              ...prev,
-                              [transfer.id]: { ...prev[transfer.id], observations: e.target.value },
-                            }))
-                          }
-                          placeholder="Añade cualquier observación sobre la recepción final"
-                          rows={2}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 mt-4 justify-end">
-                      <Button
-                        variant="outline"
-                        className="text-red-600 hover:bg-red-50 bg-transparent"
-                        onClick={() => handleRejectFinishedProduct(transfer.id)}
-                      >
-                        <XCircle className="h-4 w-4 mr-2" />
-                        Rechazar Final
-                      </Button>
-                      <Button
-                        className="bg-purple-600 hover:bg-purple-700 text-white"
-                        onClick={() => handleFinalReceiveFinishedProduct(transfer.id)}
-                      >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Confirmar Recibo Final
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Historial de Traslados de Producto Terminado y Subproducto (Recepción Final) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Warehouse className="h-5 w-5 text-gray-600" />
-            Historial de Traslados (Recepción Final)
+            <Truck className="h-5 w-5 text-blue-600" />
+            Traslados Pendientes de Recepción Final
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 border border-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Producto
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Tipo
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cant. Trasladada
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cant. Recibida Empaque
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cant. Recibida Final
-                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Fecha Traslado
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Trasladado Por
+                    Material
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Recibido Por Empaque
+                    Cantidad Trasladada
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Recibido Por Final
+                    Cajas
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Estado
+                    Subproductos
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Empaque Usado
+                    Materiales Empaque
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Obs. Empaque
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Obs. Final
+                    Empleado Empaque
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Acciones
@@ -370,63 +189,79 @@ export default function FinalProductReception({ materials, labelers, adminKey }:
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {finishedProductTransfers.length === 0 ? (
+                {pendingFinalReceptionTransfers.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="text-center py-8 text-gray-500">
-                      No hay traslados de producto terminado o subproducto registrados para recepción final.
+                    <td colSpan={8} className="text-center py-8 text-gray-500">
+                      No hay traslados pendientes de recepción final.
                     </td>
                   </tr>
                 ) : (
-                  finishedProductTransfers.map((transfer) => (
+                  pendingFinalReceptionTransfers.map((transfer) => (
                     <tr key={transfer.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(transfer.transfer_date).toLocaleDateString("es-ES")}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {transfer.material?.material_name || "N/A"} ({transfer.material?.material_code || "N/A"})
+                        {transfer.material?.material_code} - {transfer.material?.material_name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transfer.material?.type || "N/A"}
+                        {transfer.quantity} {transfer.material?.unit}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transfer.quantity} {transfer.material?.unit || ""}
+                        {transfer.num_boxes ?? "N/A"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transfer.received_quantity !== null
-                          ? `${transfer.received_quantity} ${transfer.material?.unit || ""}`
-                          : "N/A"}
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {transfer.byproducts_transferred && transfer.byproducts_transferred.length > 0 ? (
+                          <ul className="list-disc list-inside">
+                            {transfer.byproducts_transferred.map((bp, idx) => (
+                              <li key={idx}>
+                                {bp.material_code}: {bp.quantity} {bp.unit}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "N/A"
+                        )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transfer.final_received_quantity !== null
-                          ? `${transfer.final_received_quantity} ${transfer.material?.unit || ""}`
-                          : "N/A"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(transfer.transfer_date).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transfer.transfer_employee?.name || "N/A"}
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {transfer.packaging_materials_used && transfer.packaging_materials_used.length > 0 ? (
+                          <ul className="list-disc list-inside">
+                            {transfer.packaging_materials_used.map((pm, idx) => (
+                              <li key={idx}>
+                                {pm.material_code}: {pm.quantity} {pm.unit}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "N/A"
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {transfer.received_employee?.name || "N/A"}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transfer.final_received_employee?.name || "N/A"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(transfer.status)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                        {transfer.packaging_materials_used && transfer.packaging_materials_used.length > 0
-                          ? transfer.packaging_materials_used
-                              .map((p) => `${p.material_code} (${p.quantity})`)
-                              .join(", ")
-                          : "N/A"}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                        {transfer.observations || "N/A"}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                        {transfer.final_reception_observations || "N/A"}
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <Button
-                          onClick={() => handleDeleteFinishedProductTransfer(transfer.id)}
+                          onClick={() => {
+                            setReceivingTransferId(transfer.id)
+                            setReceivedQuantity(transfer.quantity) // Sugerir la cantidad trasladada
+                            setObservations(transfer.observations || "")
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="mr-2"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-1" /> Recepción Final
+                        </Button>
+                        <Button
+                          onClick={() => handleRejectTransfer(transfer.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-900 mr-2"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          onClick={() => handleDeleteTransfer(transfer.id)}
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-900"
@@ -442,6 +277,72 @@ export default function FinalProductReception({ materials, labelers, adminKey }:
           </div>
         </CardContent>
       </Card>
+
+      {receivingTransferId && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-green-600" />
+              Confirmar Recepción Final
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Confirmando recepción final para el traslado ID:{" "}
+              <span className="font-semibold">{receivingTransferId.substring(0, 8)}...</span>
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="final_received_quantity">Cantidad Recibida Final</Label>
+                <Input
+                  id="final_received_quantity"
+                  type="number"
+                  step="0.01"
+                  value={receivedQuantity ?? ""}
+                  onChange={(e) => setReceivedQuantity(Number(e.target.value))}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="final_received_employee">Empleado que Recibe Final</Label>
+                <Select value={receivedEmployeeId} onValueChange={setReceivedEmployeeId} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona empleado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labelers.map((labeler) => (
+                      <SelectItem key={labeler.id} value={labeler.id}>
+                        {labeler.name} - {labeler.cedula}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="final_observations">Observaciones (Opcional)</Label>
+              <Input
+                id="final_observations"
+                type="text"
+                value={observations}
+                onChange={(e) => setObservations(e.target.value)}
+                placeholder="Ej: Producto en buen estado, observaciones adicionales."
+              />
+            </div>
+
+            <div className="flex justify-end gap-4">
+              <Button onClick={resetReceptionForm} variant="outline">
+                Cancelar
+              </Button>
+              <Button onClick={handleFinalReceiveTransfer} className="bg-green-600 hover:bg-green-700">
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Confirmar Recepción Final
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
